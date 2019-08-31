@@ -33,7 +33,7 @@ fn main() {
         flush: None,
         fsync: None,
         fsyncdir: None,
-        getattr: None,
+        getattr: Some(passthrough_getattr),
         getxattr: None,
         init: Some(passthrough_init),
         ioctl: None,
@@ -109,4 +109,19 @@ unsafe extern "C" fn passthrough_init(
     cfg.negative_timeout = 0.0;
 
     ptr::null_mut()
+}
+
+unsafe extern "C" fn passthrough_getattr(
+    path: *const c_char,
+    stbuf: *mut stat,
+    _fi: *mut fuse_file_info,
+) -> c_int {
+    log::trace!("called passthrough_getattr()");
+
+    let res = lstat(path, stbuf);
+    if res == -1 {
+        return errno() * -1;
+    }
+
+    0
 }
