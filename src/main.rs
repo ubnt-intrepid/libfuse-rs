@@ -1,54 +1,60 @@
-include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
+#[allow(nonstandard_style, dead_code)]
+mod bindings {
+    include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
+}
 
 use std::{
     env, ffi, mem,
-    os::raw::{c_char, c_int},
+    os::raw::{c_char, c_void, c_int},
     ptr,
 };
+use bindings::*;
 
 fn main() {
+    pretty_env_logger::init();
+
     let ops: fuse_operations = fuse_operations {
-        getattr: None,
-        readlink: None,
-        mknod: None,
-        mkdir: None,
-        unlink: None,
-        rmdir: None,
-        symlink: None,
-        rename: None,
-        link: None,
+        access: None,
+        bmap: None,
         chmod: None,
         chown: None,
-        truncate: None,
-        open: None,
-        read: None,
-        write: None,
-        statfs: None,
-        flush: None,
-        release: None,
-        fsync: None,
-        setxattr: None,
-        getxattr: None,
-        listxattr: None,
-        removexattr: None,
-        opendir: None,
-        readdir: None,
-        releasedir: None,
-        fsyncdir: None,
-        init: None,
-        destroy: None,
-        access: None,
-        create: None,
-        lock: None,
-        utimens: None,
-        bmap: None,
-        ioctl: None,
-        poll: None,
-        write_buf: None,
-        read_buf: None,
-        flock: None,
-        fallocate: None,
         copy_file_range: None,
+        create: None,
+        destroy: None,
+        fallocate: None,
+        flock: None,
+        flush: None,
+        fsync: None,
+        fsyncdir: None,
+        getattr: None,
+        getxattr: None,
+        init: Some(passthrough_init),
+        ioctl: None,
+        link: None,
+        listxattr: None,
+        lock: None,
+        mkdir: None,
+        mknod: None,
+        open: None,
+        opendir: None,
+        poll: None,
+        read_buf: None,
+        read: None,
+        readdir: None,
+        readlink: None,
+        release: None,
+        releasedir: None,
+        removexattr: None,
+        rename: None,
+        rmdir: None,
+        setxattr: None,
+        statfs: None,
+        symlink: None,
+        truncate: None,
+        unlink: None,
+        utimens: None,
+        write_buf: None,
+        write: None,
     };
 
     fuse_main(&ops);
@@ -71,4 +77,18 @@ fn fuse_main(ops: &fuse_operations) -> c_int {
             ptr::null_mut(),
         )
     }
+}
+
+unsafe extern "C" fn passthrough_init(_conn: *mut fuse_conn_info, cfg: *mut fuse_config) -> *mut c_void {
+    log::trace!("called passthrough_init()");
+
+    let cfg = &mut *cfg;
+
+    cfg.use_ino =  1;
+
+    cfg.entry_timeout = 0.0;
+    cfg.attr_timeout = 0.0;
+    cfg.negative_timeout = 0.0;
+
+    ptr::null_mut()
 }
