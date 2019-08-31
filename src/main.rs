@@ -27,7 +27,7 @@ fn main() {
         chown: None,
         copy_file_range: None,
         create: None,
-        destroy: None,
+        destroy: Some(passthrough_destroy),
         fallocate: None,
         flock: None,
         flush: None,
@@ -68,10 +68,13 @@ fn main() {
         umask(0);
     }
 
-    fuse_main(&ops);
+    let data = Data {
+        current_dir: env::current_dir().unwrap(),
+    };
+    fuse_main(&ops, data);
 }
 
-fn fuse_main(ops: &fuse_operations) -> c_int {
+fn fuse_main(ops: &fuse_operations, data: Data) -> c_int {
     let args: Vec<ffi::CString> = env::args()
         .map(ffi::CString::new)
         .collect::<Result<_, _>>()
@@ -79,15 +82,46 @@ fn fuse_main(ops: &fuse_operations) -> c_int {
     let mut c_args: Vec<*const c_char> = args.iter().map(|a| a.as_ptr()).collect();
     let argc = c_args.len() as i32;
     let argv = c_args.as_mut_ptr() as *mut *mut c_char;
+
+    let data_ptr = Box::into_raw(Box::new(data));
+
     unsafe {
         fuse_main_real(
             argc,
             argv,
             ops,
             mem::size_of::<fuse_operations>(),
-            ptr::null_mut(),
+            mem::transmute(data_ptr),
         )
     }
+}
+
+#[derive(Debug)]
+struct Data {
+    current_dir: std::path::PathBuf,
+}
+
+unsafe extern "C" fn passthrough_destroy(data: *mut c_void) {
+    mem::drop(Box::from_raw(data as *mut Data));
+}
+
+unsafe fn resolve_path(path: *const c_char) -> ffi::CString {
+    let cx = fuse_get_context();
+    debug_assert!(!cx.is_null());
+    let cx = &mut *cx;
+    debug_assert!(!cx.private_data.is_null());
+    let data = &mut *(cx.private_data as *mut Data);
+
+    let path = ffi::CStr::from_ptr(path);
+    let path = path.to_string_lossy();
+
+    let path = if path == "/" {
+        std::borrow::Cow::Borrowed(&*data.current_dir)
+    } else {
+        std::borrow::Cow::Owned(data.current_dir.join(&*path.trim_start_matches("/")))
+    };
+
+    ffi::CString::from_vec_unchecked(path.to_string_lossy().into_owned().into())
 }
 
 unsafe extern "C" fn passthrough_init(
@@ -104,7 +138,12 @@ unsafe extern "C" fn passthrough_init(
     cfg.attr_timeout = 0.0;
     cfg.negative_timeout = 0.0;
 
-    ptr::null_mut()
+    let cx = fuse_get_context();
+    debug_assert!(!cx.is_null());
+    let data_ptr = (&mut *cx).private_data;
+    debug_assert!(!data_ptr.is_null());
+
+    data_ptr
 }
 
 unsafe extern "C" fn passthrough_getattr(
@@ -112,9 +151,10 @@ unsafe extern "C" fn passthrough_getattr(
     stbuf: *mut stat,
     _fi: *mut fuse_file_info,
 ) -> c_int {
-    log::trace!("called passthrough_getattr()");
+    let path = resolve_path(path);
+    log::trace!("called passthrough_getattr(path={:?})", path);
 
-    let res = lstat(path, stbuf);
+    let res = lstat(path.as_ptr(), stbuf);
     if res == -1 {
         return errno() * -1;
     }
@@ -127,9 +167,10 @@ unsafe extern "C" fn passthrough_readlink(
     buf: *mut c_char,
     size: usize,
 ) -> c_int {
-    log::trace!("called passthrough_readlink()");
+    let path = resolve_path(path);
+    log::trace!("called passthrough_readlink(path={:?})", path);
 
-    let res = readlink(path, buf, size - 1);
+    let res = readlink(path.as_ptr(), buf, size - 1);
     if res == -1 {
         return errno() * -1;
     }
@@ -146,14 +187,15 @@ unsafe extern "C" fn passthrough_readdir(
     _fi: *mut fuse_file_info,
     _flags: fuse_readdir_flags,
 ) -> c_int {
-    log::trace!("called passthrough_readdir()");
-
+    let path = resolve_path(path);
     let filler = filler.expect("filler should not be null");
+    log::trace!("called passthrough_readdir(path={:?})", path);
 
-    let dp = opendir(path);
+    let dp = opendir(path.as_ptr());
     if dp == ptr::null_mut() {
         return errno() * -1;
     }
+    let dp = &mut *dp;
 
     loop {
         let de = readdir(dp);
@@ -176,11 +218,12 @@ unsafe extern "C" fn passthrough_readdir(
 }
 
 unsafe extern "C" fn passthrough_open(path: *const c_char, fi: *mut fuse_file_info) -> c_int {
-    log::trace!("called passthrough_open()");
+    let path = resolve_path(path);
+    log::trace!("called passthrough_open(path={:?})", path);
 
     let fi = &mut *fi;
 
-    let res = open(path, fi.flags);
+    let res = open(path.as_ptr(), fi.flags);
     if res == -1 {
         return errno() * -1;
     }
@@ -196,11 +239,12 @@ unsafe extern "C" fn passthrough_read(
     offset: off_t,
     fi: *mut fuse_file_info,
 ) -> c_int {
-    log::trace!("called passthrough_read()");
+    let path = resolve_path(path);
+    log::trace!("called passthrough_read(path={:?})", path);
 
     let fd;
     if fi == ptr::null_mut() {
-        fd = open(path, O_RDONLY as i32);
+        fd = open(path.as_ptr(), O_RDONLY as i32);
     } else {
         let fi = &mut *fi;
         fd = fi.fh as c_int;
