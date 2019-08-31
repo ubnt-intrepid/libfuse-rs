@@ -1,19 +1,26 @@
 #[allow(nonstandard_style, dead_code)]
 mod bindings {
+    use std::os::raw::c_int;
+
     include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
+
+    pub unsafe fn errno() -> c_int {
+        *__errno_location()
+    }
 }
 
+use bindings::*;
 use std::{
-    env, ffi, mem,
-    os::raw::{c_char, c_void, c_int},
+    env, ffi, fs, mem,
+    os::raw::{c_char, c_int, c_void},
     ptr,
 };
-use bindings::*;
 
 fn main() {
+    env::set_var("RUST_LOG", "trace");
     pretty_env_logger::init();
 
-    let ops: fuse_operations = fuse_operations {
+    let ops = fuse_operations {
         access: None,
         bmap: None,
         chmod: None,
@@ -57,12 +64,20 @@ fn main() {
         write: None,
     };
 
-    fuse_main(&ops);
+    unsafe {
+        umask(0);
+    }
+
+    fs::create_dir_all("/tmp/mount").unwrap();
+    env::set_current_dir("/tmp/mount").unwrap();
+
+    fuse_main(&["passthrough", ".", "-d"], &ops);
 }
 
-fn fuse_main(ops: &fuse_operations) -> c_int {
-    let args: Vec<ffi::CString> = env::args()
-        .map(ffi::CString::new)
+fn fuse_main(args: impl IntoIterator<Item = impl AsRef<str>>, ops: &fuse_operations) -> c_int {
+    let args: Vec<ffi::CString> = args
+        .into_iter()
+        .map(|s| ffi::CString::new(s.as_ref()))
         .collect::<Result<_, _>>()
         .expect("failed to construct C-style arguments list");
     let mut c_args: Vec<*const c_char> = args.iter().map(|a| a.as_ptr()).collect();
@@ -79,12 +94,15 @@ fn fuse_main(ops: &fuse_operations) -> c_int {
     }
 }
 
-unsafe extern "C" fn passthrough_init(_conn: *mut fuse_conn_info, cfg: *mut fuse_config) -> *mut c_void {
+unsafe extern "C" fn passthrough_init(
+    _conn: *mut fuse_conn_info,
+    cfg: *mut fuse_config,
+) -> *mut c_void {
     log::trace!("called passthrough_init()");
 
     let cfg = &mut *cfg;
 
-    cfg.use_ino =  1;
+    cfg.use_ino = 1;
 
     cfg.entry_timeout = 0.0;
     cfg.attr_timeout = 0.0;
