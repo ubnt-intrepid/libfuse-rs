@@ -11,7 +11,7 @@ mod bindings {
 
 use bindings::*;
 use std::{
-    env, ffi, fs, mem,
+    env, ffi, mem,
     os::raw::{c_char, c_int, c_uint, c_void},
     ptr,
 };
@@ -68,16 +68,12 @@ fn main() {
         umask(0);
     }
 
-    fs::create_dir_all("/tmp/mount").unwrap();
-    env::set_current_dir("/tmp/mount").unwrap();
-
-    fuse_main(&["passthrough", ".", "-d"], &ops);
+    fuse_main(&ops);
 }
 
-fn fuse_main(args: impl IntoIterator<Item = impl AsRef<str>>, ops: &fuse_operations) -> c_int {
-    let args: Vec<ffi::CString> = args
-        .into_iter()
-        .map(|s| ffi::CString::new(s.as_ref()))
+fn fuse_main(ops: &fuse_operations) -> c_int {
+    let args: Vec<ffi::CString> = env::args()
+        .map(ffi::CString::new)
         .collect::<Result<_, _>>()
         .expect("failed to construct C-style arguments list");
     let mut c_args: Vec<*const c_char> = args.iter().map(|a| a.as_ptr()).collect();
