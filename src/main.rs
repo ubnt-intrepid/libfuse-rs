@@ -12,7 +12,7 @@ mod bindings {
 use bindings::*;
 use std::{
     env, ffi, fs, mem,
-    os::raw::{c_char, c_int, c_void},
+    os::raw::{c_char, c_int, c_uint, c_void},
     ptr,
 };
 
@@ -47,8 +47,8 @@ fn main() {
         poll: None,
         read_buf: None,
         read: None,
-        readdir: None,
-        readlink: None,
+        readdir: Some(passthrough_readdir),
+        readlink: Some(passthrough_readlink),
         release: None,
         releasedir: None,
         removexattr: None,
@@ -123,5 +123,56 @@ unsafe extern "C" fn passthrough_getattr(
         return errno() * -1;
     }
 
+    0
+}
+
+unsafe extern "C" fn passthrough_readlink(
+    path: *const c_char,
+    buf: *mut c_char,
+    size: usize,
+) -> c_int {
+    let res = readlink(path, buf, size - 1);
+    if res == -1 {
+        return errno() * -1;
+    }
+
+    *buf.offset(res) = 0;
+    0
+}
+
+unsafe extern "C" fn passthrough_readdir(
+    path: *const c_char,
+    buf: *mut c_void,
+    filler: fuse_fill_dir_t,
+    _offset: off_t,
+    _fi: *mut fuse_file_info,
+    _flags: fuse_readdir_flags,
+) -> c_int {
+    log::trace!("called passthrough_readdir()");
+
+    let filler = filler.expect("filler should not be null");
+
+    let dp = opendir(path);
+    if dp == ptr::null_mut() {
+        return errno() * -1;
+    }
+
+    loop {
+        let de = readdir(dp);
+        if de == ptr::null_mut() {
+            break;
+        }
+        let de = &mut *de;
+
+        let mut st: stat = mem::zeroed();
+        st.st_ino = de.d_ino;
+        st.st_mode = (de.d_type as c_uint) << 12;
+
+        if filler(buf, de.d_name.as_ptr(), &mut st, 0, 0) != 0 {
+            break;
+        }
+    }
+
+    closedir(dp);
     0
 }
