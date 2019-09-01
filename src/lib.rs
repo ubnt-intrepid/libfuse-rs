@@ -1,3 +1,5 @@
+//! A wrapper for libfuse3 using bindgen.
+
 #[allow(nonstandard_style, dead_code)]
 pub mod sys {
     use libc::{flock, iovec, stat, statvfs, timespec};

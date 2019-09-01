@@ -1,6 +1,7 @@
 [package]
-name = "passthrough-rs"
+name = "fuse3-rs"
 version = "0.0.0"
+description = "A file system example using libfuse 3 with bindgen"
 publish = false
 authors = ["Yusuke Sasaki <yusuke.sasaki.nuem@gmail.com>"]
 edition = "2018"
@@ -10,15 +11,10 @@ build = "build.rs"
 name = "fuse"
 path = "src/lib.rs"
 
-[[bin]]
-name = "passthrough"
-path = "src/main.rs"
-doc = false
-
 [dependencies]
 libc = "0.2"
-nix = "0.15"
 log = "0.4"
+nix = "0.15"
 pretty_env_logger = "0.2"
 
 [build-dependencies]
