@@ -1,6 +1,9 @@
 use nix::errno::errno;
 use std::{
-    env, ffi, mem,
+    borrow::Cow,
+    env,
+    ffi::{CStr, CString},
+    mem,
     os::raw::{c_char, c_int, c_uint, c_void},
     ptr,
 };
@@ -24,16 +27,14 @@ struct Filesystem {
 }
 
 impl Filesystem {
-    unsafe fn resolve_path(&self, path: *const c_char) -> ffi::CString {
-        let path = ffi::CStr::from_ptr(path);
+    unsafe fn resolve_path(&self, path: &CStr) -> CString {
         let path = path.to_string_lossy();
         let path = if path == "/" {
-            std::borrow::Cow::Borrowed(&*self.source)
+            Cow::Borrowed(&*self.source)
         } else {
-            std::borrow::Cow::Owned(self.source.join(&*path.trim_start_matches("/")))
+            Cow::Owned(self.source.join(&*path.trim_start_matches("/")))
         };
-
-        ffi::CString::from_vec_unchecked(path.to_string_lossy().into_owned().into())
+        CString::from_vec_unchecked(path.to_string_lossy().into_owned().into())
     }
 }
 
@@ -52,7 +53,7 @@ impl fuse::FS for Filesystem {
 
     unsafe fn getattr(
         &self,
-        path: *const c_char,
+        path: &CStr,
         stbuf: *mut libc::stat,
         _fi: *mut fuse::sys::fuse_file_info,
     ) -> c_int {
@@ -67,22 +68,26 @@ impl fuse::FS for Filesystem {
         0
     }
 
-    unsafe fn readlink(&self, path: *const c_char, buf: *mut c_char, size: usize) -> c_int {
+    unsafe fn readlink(&self, path: &CStr, buf: &mut [u8]) -> c_int {
         let path = self.resolve_path(path);
         log::trace!("called passthrough_readlink(path={:?})", path);
 
-        let res = libc::readlink(path.as_ptr(), buf, size - 1);
+        let res = libc::readlink(
+            path.as_ptr(),
+            buf.as_mut_ptr() as *mut c_char,
+            buf.len() - 1,
+        );
         if res == -1 {
             return -errno();
         }
+        buf[res as usize] = 0;
 
-        *buf.offset(res) = 0;
         0
     }
 
     unsafe fn readdir(
         &self,
-        path: *const c_char,
+        path: &CStr,
         buf: *mut c_void,
         filler: fuse::sys::fuse_fill_dir_t,
         _offset: libc::off_t,
@@ -110,7 +115,7 @@ impl fuse::FS for Filesystem {
             st.st_ino = de.d_ino;
             st.st_mode = (de.d_type as c_uint) << 12;
 
-            if filler(buf, de.d_name.as_ptr(), &mut st, 0, 0) != 0 {
+            if filler(buf, de.d_name.as_ptr(), &st, 0, 0) != 0 {
                 break;
             }
         }
@@ -119,7 +124,7 @@ impl fuse::FS for Filesystem {
         0
     }
 
-    unsafe fn open(&self, path: *const c_char, fi: *mut fuse::sys::fuse_file_info) -> c_int {
+    unsafe fn open(&self, path: &CStr, fi: *mut fuse::sys::fuse_file_info) -> c_int {
         let path = self.resolve_path(path);
         log::trace!("called passthrough_open(path={:?})", path);
 
@@ -136,9 +141,8 @@ impl fuse::FS for Filesystem {
 
     unsafe fn read(
         &self,
-        path: *const c_char,
-        buf: *mut c_char,
-        size: usize,
+        path: &CStr,
+        buf: &mut [u8],
         offset: libc::off_t,
         fi: *mut fuse::sys::fuse_file_info,
     ) -> c_int {
@@ -156,7 +160,7 @@ impl fuse::FS for Filesystem {
             return -errno();
         }
 
-        let mut res = libc::pread(fd, buf as *mut c_void, size, offset) as c_int;
+        let mut res = libc::pread(fd, buf.as_mut_ptr() as *mut c_void, buf.len(), offset) as c_int;
         if res == -1 {
             res = -errno();
         }

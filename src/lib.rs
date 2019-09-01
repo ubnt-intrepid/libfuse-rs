@@ -7,38 +7,41 @@ pub mod sys {
 }
 
 use libc::{c_char, c_int, c_void, stat};
-use std::{env, ffi, mem};
+use std::{
+    env,
+    ffi::{self, CStr},
+    mem,
+};
 use sys::*;
 
 pub trait FS {
-    unsafe fn init(&self, _conn: *mut fuse_conn_info, cfg: *mut fuse_config);
+    unsafe fn init(&self, conn: *mut fuse_conn_info, cfg: *mut fuse_config);
 
-    unsafe fn getattr(
-        &self,
-        path: *const c_char,
-        stbuf: *mut stat,
-        _fi: *mut fuse_file_info,
-    ) -> c_int;
+    /// Get file attributes.
+    unsafe fn getattr(&self, path: &CStr, stbuf: *mut stat, fi: *mut fuse_file_info) -> c_int;
 
-    unsafe fn readlink(&self, path: *const c_char, buf: *mut c_char, size: usize) -> c_int;
+    /// Read the target of a symbolic link.
+    unsafe fn readlink(&self, path: &CStr, buf: &mut [u8]) -> c_int;
 
+    /// Read a directory.
     unsafe fn readdir(
         &self,
-        path: *const c_char,
+        path: &CStr,
         buf: *mut c_void,
         filler: fuse_fill_dir_t,
-        _offset: off_t,
-        _fi: *mut fuse_file_info,
-        _flags: fuse_readdir_flags,
+        offset: off_t,
+        fi: *mut fuse_file_info,
+        flags: fuse_readdir_flags,
     ) -> c_int;
 
-    unsafe fn open(&self, path: *const c_char, fi: *mut fuse_file_info) -> c_int;
+    /// Open a file.
+    unsafe fn open(&self, path: &CStr, fi: *mut fuse_file_info) -> c_int;
 
+    /// Read data from an opened file.
     unsafe fn read(
         &self,
-        path: *const c_char,
-        buf: *mut c_char,
-        size: usize,
+        path: &CStr,
+        buf: &mut [u8],
         offset: off_t,
         fi: *mut fuse_file_info,
     ) -> c_int;
@@ -145,7 +148,7 @@ unsafe extern "C" fn lib_getattr<F: FS>(
     stbuf: *mut stat,
     fi: *mut fuse_file_info,
 ) -> c_int {
-    with_get_cx(|fs: &F| fs.getattr(path, stbuf, fi))
+    with_get_cx(|fs: &F| fs.getattr(CStr::from_ptr(path), stbuf, fi))
 }
 
 unsafe extern "C" fn lib_readlink<F: FS>(
@@ -153,7 +156,11 @@ unsafe extern "C" fn lib_readlink<F: FS>(
     buf: *mut c_char,
     size: usize,
 ) -> c_int {
-    with_get_cx(|fs: &F| fs.readlink(path, buf, size))
+    with_get_cx(|fs: &F| {
+        let path = CStr::from_ptr(path);
+        let buf = std::slice::from_raw_parts_mut(buf as *mut u8, size);
+        fs.readlink(path, buf)
+    })
 }
 
 unsafe extern "C" fn lib_readdir<F: FS>(
@@ -164,11 +171,11 @@ unsafe extern "C" fn lib_readdir<F: FS>(
     fi: *mut fuse_file_info,
     flags: fuse_readdir_flags,
 ) -> c_int {
-    with_get_cx(|fs: &F| fs.readdir(path, buf, filler, offset, fi, flags))
+    with_get_cx(|fs: &F| fs.readdir(CStr::from_ptr(path), buf, filler, offset, fi, flags))
 }
 
 unsafe extern "C" fn lib_open<F: FS>(path: *const c_char, fi: *mut fuse_file_info) -> c_int {
-    with_get_cx(|fs: &F| fs.open(path, fi))
+    with_get_cx(|fs: &F| fs.open(CStr::from_ptr(path), fi))
 }
 
 unsafe extern "C" fn lib_read<F: FS>(
@@ -178,5 +185,9 @@ unsafe extern "C" fn lib_read<F: FS>(
     offset: off_t,
     fi: *mut fuse_file_info,
 ) -> c_int {
-    with_get_cx(|fs: &F| fs.read(path, buf, size, offset, fi))
+    with_get_cx(|fs: &F| {
+        let path = CStr::from_ptr(path);
+        let buf = std::slice::from_raw_parts_mut(buf as *mut u8, size);
+        fs.read(path, buf, offset, fi)
+    })
 }
