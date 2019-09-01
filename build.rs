@@ -6,6 +6,10 @@ fn main() {
     let bindings = bindgen::Builder::default()
         .header("wrapper.h")
         .clang_args(&["-I/usr/include/fuse3"])
+        .whitelist_type("fuse_.*")
+        .whitelist_function("fuse_.*")
+        .whitelist_var("fuse_.*")
+        .blacklist_type("flock|iovec|stat|statvfs|timespec")
         .generate()
         .expect("Unable to generate bindings");
 

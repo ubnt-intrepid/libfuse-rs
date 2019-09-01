@@ -1,14 +1,10 @@
 #[allow(nonstandard_style, dead_code)]
 pub mod sys {
-    pub use std::os::raw::{c_char, c_int, c_void};
-
+    use libc::{flock, iovec, stat, statvfs, timespec};
     include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
-
-    pub unsafe fn errno() -> c_int {
-        *__errno_location()
-    }
 }
 
+use libc::{c_char, c_int, c_void, stat};
 use std::{env, ffi, mem};
 use sys::*;
 

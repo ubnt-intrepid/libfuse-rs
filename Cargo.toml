@@ -6,7 +6,18 @@ authors = ["Yusuke Sasaki <yusuke.sasaki.nuem@gmail.com>"]
 edition = "2018"
 build = "build.rs"
 
+[lib]
+name = "fuse"
+path = "src/lib.rs"
+
+[[bin]]
+name = "passthrough"
+path = "src/main.rs"
+doc = false
+
 [dependencies]
+libc = "0.2"
+nix = "0.15"
 log = "0.4"
 pretty_env_logger = "0.2"
 
