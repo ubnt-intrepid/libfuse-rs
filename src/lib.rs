@@ -6,99 +6,166 @@ pub mod sys {
     include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 }
 
-use libc::{c_char, c_int, c_uint, c_void, dev_t, gid_t, mode_t, off_t, stat, statvfs, uid_t};
+use libc::{
+    c_char, c_double, c_int, c_uint, c_void, dev_t, gid_t, mode_t, off_t, stat, statvfs, uid_t,
+};
 use std::{
     env,
     ffi::{self, CStr},
     mem,
+    ptr::NonNull,
 };
 use sys::{
-    fuse_config, fuse_conn_info, fuse_file_info, fuse_fill_dir_t, fuse_operations,
+    fuse_config, fuse_conn_info, fuse_file_info, fuse_fill_dir_flags, fuse_operations,
     fuse_readdir_flags,
 };
 
+#[repr(C)]
+pub struct FileInfo(fuse_file_info);
+
+impl FileInfo {
+    unsafe fn from_ptr(fi: *mut fuse_file_info) -> Option<NonNull<Self>> {
+        NonNull::new(fi).map(NonNull::cast)
+    }
+
+    pub fn fh(&self) -> u64 {
+        self.0.fh
+    }
+
+    pub fn fh_mut(&mut self) -> &mut u64 {
+        &mut self.0.fh
+    }
+
+    pub fn flags(&self) -> c_int {
+        self.0.flags
+    }
+}
+
+#[repr(C)]
+pub struct ConnInfo(fuse_conn_info);
+
+#[repr(C)]
+pub struct Config(fuse_config);
+
+impl Config {
+    pub fn use_ino(&mut self, ino: c_int) -> &mut Self {
+        self.0.use_ino = ino;
+        self
+    }
+
+    pub fn entry_timeout(&mut self, timeout: c_double) -> &mut Self {
+        self.0.entry_timeout = timeout;
+        self
+    }
+
+    pub fn attr_timeout(&mut self, timeout: c_double) -> &mut Self {
+        self.0.attr_timeout = timeout;
+        self
+    }
+
+    pub fn negative_timeout(&mut self, timeout: c_double) -> &mut Self {
+        self.0.negative_timeout = timeout;
+        self
+    }
+}
+
+pub struct FillDir {
+    buf: *mut c_void,
+    filler: unsafe extern "C" fn(
+        *mut c_void,
+        *const c_char,
+        *const stat,
+        off_t,
+        fuse_fill_dir_flags,
+    ) -> c_int,
+}
+
+impl FillDir {
+    pub unsafe fn fill(
+        &mut self,
+        name: &CStr,
+        stbuf: &stat,
+        off: off_t,
+        flags: fuse_fill_dir_flags,
+    ) -> c_int {
+        (self.filler)(self.buf, name.as_ptr(), stbuf, off, flags)
+    }
+}
+
+#[allow(unused_variables)]
 pub trait FS {
-    unsafe fn init(&self, conn: *mut fuse_conn_info, cfg: *mut fuse_config);
+    /// Initialize the filesystem.
+    fn init(&mut self, conn: &mut ConnInfo, cfg: &mut Config) {}
+
+    /// Clean up the filesystem.
+    fn destroy(&mut self) {}
 
     /// Get file attributes.
-    unsafe fn getattr(&self, path: &CStr, stbuf: *mut stat, fi: *mut fuse_file_info) -> c_int;
+    fn getattr(&self, path: &CStr, stbuf: &mut stat, fi: Option<&mut FileInfo>) -> c_int;
 
     /// Check the file access permissions.
-    unsafe fn access(&self, path: &CStr, mask: c_int) -> c_int;
+    fn access(&self, path: &CStr, mask: c_int) -> c_int;
 
     /// Read the target of a symbolic link.
-    unsafe fn readlink(&self, path: &CStr, buf: &mut [u8]) -> c_int;
+    fn readlink(&self, path: &CStr, buf: &mut [u8]) -> c_int;
 
     /// Read a directory.
-    unsafe fn readdir(
+    fn readdir(
         &self,
         path: &CStr,
-        buf: *mut c_void,
-        filler: fuse_fill_dir_t,
+        filler: &mut FillDir,
         offset: off_t,
-        fi: *mut fuse_file_info,
+        fi: Option<&mut FileInfo>,
         flags: fuse_readdir_flags,
     ) -> c_int;
 
     /// Create a file node.
-    unsafe fn mknod(&self, path: &CStr, mode: mode_t, rdev: dev_t) -> c_int;
+    fn mknod(&self, path: &CStr, mode: mode_t, rdev: dev_t) -> c_int;
 
     /// Create a directory.
-    unsafe fn mkdir(&self, path: &CStr, mode: mode_t) -> c_int;
+    fn mkdir(&self, path: &CStr, mode: mode_t) -> c_int;
 
     /// Remove a file.
-    unsafe fn unlink(&self, path: &CStr) -> c_int;
+    fn unlink(&self, path: &CStr) -> c_int;
 
     /// Remove a directory.
-    unsafe fn rmdir(&self, path: &CStr) -> c_int;
+    fn rmdir(&self, path: &CStr) -> c_int;
 
     /// Create a symbolic link.
-    unsafe fn symlink(&self, path_from: &CStr, path_to: &CStr) -> c_int;
+    fn symlink(&self, path_from: &CStr, path_to: &CStr) -> c_int;
 
     /// Rename a file.
-    unsafe fn rename(&self, path_from: &CStr, path_to: &CStr, flags: c_uint) -> c_int;
+    fn rename(&self, path_from: &CStr, path_to: &CStr, flags: c_uint) -> c_int;
 
     /// Create a hard link to a file.
-    unsafe fn link(&self, path_from: &CStr, path_to: &CStr) -> c_int;
+    fn link(&self, path_from: &CStr, path_to: &CStr) -> c_int;
 
     /// Change the permission bits of a file.
-    unsafe fn chmod(&self, path: &CStr, mode: mode_t, fi: *mut fuse_file_info) -> c_int;
+    fn chmod(&self, path: &CStr, mode: mode_t, fi: Option<&mut FileInfo>) -> c_int;
 
     /// Change the owner and group of a file.
-    unsafe fn chown(&self, path: &CStr, uid: uid_t, gid: gid_t, fi: *mut fuse_file_info) -> c_int;
+    fn chown(&self, path: &CStr, uid: uid_t, gid: gid_t, fi: Option<&mut FileInfo>) -> c_int;
 
     /// Change the size of a file.
-    unsafe fn truncate(&self, path: &CStr, size: off_t, fi: *mut fuse_file_info) -> c_int;
+    fn truncate(&self, path: &CStr, size: off_t, fi: Option<&mut FileInfo>) -> c_int;
 
     /// Create and open a file.
-    unsafe fn create(&self, path: &CStr, mode: mode_t, fi: *mut fuse_file_info) -> c_int;
+    fn create(&self, path: &CStr, mode: mode_t, fi: &mut FileInfo) -> c_int;
 
     /// Open a file.
-    unsafe fn open(&self, path: &CStr, fi: *mut fuse_file_info) -> c_int;
+    fn open(&self, path: &CStr, fi: &mut FileInfo) -> c_int;
 
     /// Read data from an opened file.
-    unsafe fn read(
-        &self,
-        path: &CStr,
-        buf: &mut [u8],
-        offset: off_t,
-        fi: *mut fuse_file_info,
-    ) -> c_int;
+    fn read(&self, path: &CStr, buf: &mut [u8], offset: off_t, fi: Option<&mut FileInfo>) -> c_int;
 
     /// Write data to an opened file.
-    unsafe fn write(
-        &self,
-        path: &CStr,
-        buf: &[u8],
-        offset: off_t,
-        fi: *mut fuse_file_info,
-    ) -> c_int;
+    fn write(&self, path: &CStr, buf: &[u8], offset: off_t, fi: Option<&mut FileInfo>) -> c_int;
 
     /// Get file system statistics.
-    unsafe fn statfs(&self, path: &CStr, stbuf: *mut statvfs) -> c_int;
+    fn statfs(&self, path: &CStr, stbuf: &mut statvfs) -> c_int;
 
     /// Release an opened file.
-    unsafe fn release(&self, path: &CStr, fi: *mut fuse_file_info) -> c_int;
+    fn release(&self, path: &CStr, fi: &mut FileInfo) -> c_int;
 }
 
 pub fn main<F: FS>(fuse: F) -> ! {
@@ -129,10 +196,10 @@ mod ops {
             fuse_config, fuse_conn_info, fuse_file_info, fuse_fill_dir_t, fuse_operations,
             fuse_readdir_flags,
         },
-        FS,
+        Config, ConnInfo, FileInfo, FillDir, FS,
     };
     use libc::{c_char, c_int, c_uint, c_void, dev_t, gid_t, mode_t, off_t, stat, statvfs, uid_t};
-    use std::{ffi::CStr, mem, slice};
+    use std::{ffi::CStr, mem, ptr::NonNull, slice};
 
     #[allow(nonstandard_style)]
     type c_str = *const c_char;
@@ -196,19 +263,27 @@ mod ops {
         conn: *mut fuse_conn_info,
         cfg: *mut fuse_config,
     ) -> *mut c_void {
+        debug_assert!(!conn.is_null());
+        let mut conn = NonNull::new_unchecked(conn as *mut ConnInfo);
+
+        debug_assert!(!cfg.is_null());
+        let mut cfg = NonNull::new_unchecked(cfg as *mut Config);
+
         let cx = crate::sys::fuse_get_context();
         debug_assert!(!cx.is_null());
 
         let data_ptr = (&mut *cx).private_data;
         debug_assert!(!data_ptr.is_null());
 
-        (&mut *(data_ptr as *mut F)).init(conn, cfg);
+        (&mut *(data_ptr as *mut F)).init(conn.as_mut(), cfg.as_mut());
 
         data_ptr
     }
 
     unsafe extern "C" fn lib_destroy<F: FS>(fs: *mut c_void) {
-        mem::drop(Box::from_raw(fs as *mut F));
+        let mut data = Box::from_raw(fs as *mut F);
+        data.destroy();
+        mem::drop(data);
     }
 
     unsafe extern "C" fn lib_getattr<F: FS>(
@@ -216,7 +291,15 @@ mod ops {
         stbuf: *mut stat,
         fi: *mut fuse_file_info,
     ) -> c_int {
-        get_private_data(|fs: &F| fs.getattr(CStr::from_ptr(path), stbuf, fi))
+        get_private_data(|fs: &F| {
+            let mut stbuf = NonNull::new(stbuf).expect("stbuf should not be null");
+            let mut fi = FileInfo::from_ptr(fi);
+            fs.getattr(
+                CStr::from_ptr(path),
+                stbuf.as_mut(),
+                fi.as_mut().map(|fi| fi.as_mut()),
+            )
+        })
     }
 
     unsafe extern "C" fn lib_access<F: FS>(path: c_str, mask: c_int) -> c_int {
@@ -239,7 +322,19 @@ mod ops {
         fi: *mut fuse_file_info,
         flags: fuse_readdir_flags,
     ) -> c_int {
-        get_private_data(|fs: &F| fs.readdir(CStr::from_ptr(path), buf, filler, offset, fi, flags))
+        get_private_data(|fs: &F| {
+            let mut fi = FileInfo::from_ptr(fi);
+            fs.readdir(
+                CStr::from_ptr(path),
+                &mut FillDir {
+                    buf,
+                    filler: filler.expect("filler should not be null"),
+                },
+                offset,
+                fi.as_mut().map(|fi| fi.as_mut()),
+                flags,
+            )
+        })
     }
 
     unsafe extern "C" fn lib_mknod<F: FS>(path: c_str, mode: mode_t, rdev: dev_t) -> c_int {
@@ -287,7 +382,14 @@ mod ops {
         mode: mode_t,
         fi: *mut fuse_file_info,
     ) -> c_int {
-        get_private_data(|fs: &F| fs.chmod(CStr::from_ptr(path), mode, fi))
+        get_private_data(|fs: &F| {
+            let mut fi = FileInfo::from_ptr(fi);
+            fs.chmod(
+                CStr::from_ptr(path),
+                mode,
+                fi.as_mut().map(|fi| fi.as_mut()),
+            )
+        })
     }
 
     unsafe extern "C" fn lib_chown<F: FS>(
@@ -296,7 +398,15 @@ mod ops {
         gid: gid_t,
         fi: *mut fuse_file_info,
     ) -> c_int {
-        get_private_data(|fs: &F| fs.chown(CStr::from_ptr(path), uid, gid, fi))
+        get_private_data(|fs: &F| {
+            let mut fi = FileInfo::from_ptr(fi);
+            fs.chown(
+                CStr::from_ptr(path),
+                uid,
+                gid,
+                fi.as_mut().map(|fi| fi.as_mut()),
+            )
+        })
     }
 
     unsafe extern "C" fn lib_truncate<F: FS>(
@@ -304,7 +414,14 @@ mod ops {
         size: off_t,
         fi: *mut fuse_file_info,
     ) -> c_int {
-        get_private_data(|fs: &F| fs.truncate(CStr::from_ptr(path), size, fi))
+        get_private_data(|fs: &F| {
+            let mut fi = FileInfo::from_ptr(fi);
+            fs.truncate(
+                CStr::from_ptr(path),
+                size,
+                fi.as_mut().map(|fi| fi.as_mut()),
+            )
+        })
     }
 
     unsafe extern "C" fn lib_create<F: FS>(
@@ -312,11 +429,19 @@ mod ops {
         mode: mode_t,
         fi: *mut fuse_file_info,
     ) -> c_int {
-        get_private_data(|fs: &F| fs.create(CStr::from_ptr(path), mode, fi))
+        get_private_data(|fs: &F| {
+            debug_assert!(!fi.is_null());
+            let mut fi = NonNull::new_unchecked(fi as *mut FileInfo);
+            fs.create(CStr::from_ptr(path), mode, fi.as_mut())
+        })
     }
 
     unsafe extern "C" fn lib_open<F: FS>(path: *const c_char, fi: *mut fuse_file_info) -> c_int {
-        get_private_data(|fs: &F| fs.open(CStr::from_ptr(path), fi))
+        get_private_data(|fs: &F| {
+            debug_assert!(!fi.is_null());
+            let mut fi = NonNull::new_unchecked(fi as *mut FileInfo);
+            fs.open(CStr::from_ptr(path), fi.as_mut())
+        })
     }
 
     unsafe extern "C" fn lib_read<F: FS>(
@@ -329,7 +454,8 @@ mod ops {
         get_private_data(|fs: &F| {
             let path = CStr::from_ptr(path);
             let buf = std::slice::from_raw_parts_mut(buf as *mut u8, size);
-            fs.read(path, buf, offset, fi)
+            let mut fi = FileInfo::from_ptr(fi);
+            fs.read(path, buf, offset, fi.as_mut().map(|fi| fi.as_mut()))
         })
     }
 
@@ -343,15 +469,24 @@ mod ops {
         get_private_data(|fs: &F| {
             let path = CStr::from_ptr(path);
             let buf = std::slice::from_raw_parts(buf as *const u8, size);
-            fs.write(path, buf, offset, fi)
+            let mut fi = FileInfo::from_ptr(fi);
+            fs.write(path, buf, offset, fi.as_mut().map(|fi| fi.as_mut()))
         })
     }
 
     unsafe extern "C" fn lib_statfs<F: FS>(path: c_str, stbuf: *mut statvfs) -> c_int {
-        get_private_data(|fs: &F| fs.statfs(CStr::from_ptr(path), stbuf))
+        get_private_data(|fs: &F| {
+            debug_assert!(!stbuf.is_null());
+            let mut stbuf = NonNull::new_unchecked(stbuf);
+            fs.statfs(CStr::from_ptr(path), stbuf.as_mut())
+        })
     }
 
     unsafe extern "C" fn lib_release<F: FS>(path: c_str, fi: *mut fuse_file_info) -> c_int {
-        get_private_data(|fs: &F| fs.release(CStr::from_ptr(path), fi))
+        get_private_data(|fs: &F| {
+            debug_assert!(!fi.is_null());
+            let mut fi = NonNull::new_unchecked(fi as *mut FileInfo);
+            fs.release(CStr::from_ptr(path), fi.as_mut())
+        })
     }
 }
