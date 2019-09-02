@@ -40,7 +40,7 @@ impl Filesystem {
 
 impl fuse::FS for Filesystem {
     unsafe fn init(&self, _conn: *mut fuse::sys::fuse_conn_info, cfg: *mut fuse::sys::fuse_config) {
-        log::trace!("called passthrough_init()");
+        log::trace!("init()");
 
         let cfg = &mut *cfg;
 
@@ -58,7 +58,7 @@ impl fuse::FS for Filesystem {
         _fi: *mut fuse::sys::fuse_file_info,
     ) -> c_int {
         let path = self.resolve_path(path);
-        log::trace!("called passthrough_getattr(path={:?})", path);
+        log::trace!("getattr(path={:?})", path);
 
         let res = libc::lstat(path.as_ptr(), stbuf);
         if res == -1 {
@@ -68,9 +68,20 @@ impl fuse::FS for Filesystem {
         0
     }
 
+    unsafe fn access(&self, path: &CStr, mask: c_int) -> c_int {
+        let path = self.resolve_path(path);
+        log::trace!("access(path={:?})", path);
+
+        let res = libc::access(path.as_ptr(), mask);
+        if res == -1 {
+            return -errno();
+        }
+        0
+    }
+
     unsafe fn readlink(&self, path: &CStr, buf: &mut [u8]) -> c_int {
         let path = self.resolve_path(path);
-        log::trace!("called passthrough_readlink(path={:?})", path);
+        log::trace!("readlink(path={:?})", path);
 
         let res = libc::readlink(
             path.as_ptr(),
@@ -96,7 +107,7 @@ impl fuse::FS for Filesystem {
     ) -> c_int {
         let path = self.resolve_path(path);
         let filler = filler.expect("filler should not be null");
-        log::trace!("called passthrough_readdir(path={:?})", path);
+        log::trace!("readdir(path={:?})", path);
 
         let dp = libc::opendir(path.as_ptr());
         if dp == ptr::null_mut() {
@@ -124,9 +135,174 @@ impl fuse::FS for Filesystem {
         0
     }
 
+    unsafe fn mknod(&self, path: &CStr, mode: libc::mode_t, rdev: libc::dev_t) -> c_int {
+        let path = self.resolve_path(path);
+        log::trace!("mknod(path={:?}, mode={}, rdev={})", path, mode, rdev);
+
+        let res = mknod_wrapper(libc::AT_FDCWD, &path, None, mode, rdev);
+        if res == -1 {
+            return -errno();
+        }
+        0
+    }
+
+    unsafe fn mkdir(&self, path: &CStr, mode: libc::mode_t) -> c_int {
+        let path = self.resolve_path(path);
+        log::trace!("mkdir(path={:?}, mode={})", path, mode);
+
+        let res = libc::mkdir(path.as_ptr(), mode);
+        if res == -1 {
+            return -errno();
+        }
+        0
+    }
+
+    unsafe fn unlink(&self, path: &CStr) -> c_int {
+        let path = self.resolve_path(path);
+        log::trace!("unlink(path={:?})", path);
+
+        let res = libc::unlink(path.as_ptr());
+        if res == -1 {
+            return -errno();
+        }
+        0
+    }
+
+    unsafe fn rmdir(&self, path: &CStr) -> c_int {
+        let path = self.resolve_path(path);
+        log::trace!("open(path={:?})", path);
+
+        let res = libc::rmdir(path.as_ptr());
+        if res == -1 {
+            return -errno();
+        }
+        0
+    }
+
+    unsafe fn symlink(&self, path_from: &CStr, path_to: &CStr) -> c_int {
+        let path_to = self.resolve_path(path_to);
+        log::trace!("symlink(from={:?}, to={:?})", path_from, path_to);
+
+        let res = libc::symlink(path_from.as_ptr(), path_to.as_ptr());
+        if res == -1 {
+            return -errno();
+        }
+        0
+    }
+
+    unsafe fn rename(&self, path_from: &CStr, path_to: &CStr, flags: c_uint) -> c_int {
+        let path_to = self.resolve_path(path_to);
+        log::trace!(
+            "rename(from={:?}, to={:?}, flags={})",
+            path_from,
+            path_to,
+            flags
+        );
+
+        if flags != 0 {
+            return -libc::EINVAL;
+        }
+
+        let res = libc::rename(path_from.as_ptr(), path_to.as_ptr());
+        if res == -1 {
+            return -errno();
+        }
+        0
+    }
+
+    unsafe fn link(&self, path_from: &CStr, path_to: &CStr) -> c_int {
+        let path_to = self.resolve_path(path_to);
+        log::trace!("link(from={:?}, to={:?})", path_from, path_to);
+
+        let res = libc::link(path_from.as_ptr(), path_to.as_ptr());
+        if res == -1 {
+            return -errno();
+        }
+
+        0
+    }
+
+    unsafe fn chmod(
+        &self,
+        path: &CStr,
+        mode: libc::mode_t,
+        _fi: *mut fuse::sys::fuse_file_info,
+    ) -> c_int {
+        let path = self.resolve_path(path);
+        log::trace!("chmod(path={:?}, mode={})", path, mode);
+
+        let res = libc::chmod(path.as_ptr(), mode);
+        if res == -1 {
+            return -errno();
+        }
+
+        0
+    }
+
+    unsafe fn chown(
+        &self,
+        path: &CStr,
+        uid: libc::uid_t,
+        gid: libc::gid_t,
+        _fi: *mut fuse::sys::fuse_file_info,
+    ) -> c_int {
+        let path = self.resolve_path(path);
+        log::trace!("chown(path={:?}, uid={}, gid={})", path, uid, gid);
+
+        let res = libc::lchown(path.as_ptr(), uid, gid);
+        if res == -1 {
+            return -errno();
+        }
+
+        0
+    }
+
+    unsafe fn truncate(
+        &self,
+        path: &CStr,
+        size: libc::off_t,
+        fi: *mut fuse::sys::fuse_file_info,
+    ) -> c_int {
+        let path = self.resolve_path(path);
+        log::trace!("truncate(path={:?}, size={})", path, size);
+
+        let res;
+        if fi != ptr::null_mut() {
+            res = libc::ftruncate((&mut *fi).fh as i32, size);
+        } else {
+            res = libc::truncate(path.as_ptr(), size);
+        }
+
+        if res == -1 {
+            return -errno();
+        }
+
+        0
+    }
+
+    unsafe fn create(
+        &self,
+        path: &CStr,
+        mode: libc::mode_t,
+        fi: *mut fuse::sys::fuse_file_info,
+    ) -> c_int {
+        let path = self.resolve_path(path);
+        log::trace!("create(path={:?}, mode={})", path, mode);
+
+        let fi = &mut *fi;
+
+        let res = libc::open(path.as_ptr(), fi.flags, mode);
+        if res == -1 {
+            return -errno();
+        }
+
+        fi.fh = res as u64;
+        0
+    }
+
     unsafe fn open(&self, path: &CStr, fi: *mut fuse::sys::fuse_file_info) -> c_int {
         let path = self.resolve_path(path);
-        log::trace!("called passthrough_open(path={:?})", path);
+        log::trace!("open(path={:?})", path);
 
         let fi = &mut *fi;
 
@@ -147,14 +323,13 @@ impl fuse::FS for Filesystem {
         fi: *mut fuse::sys::fuse_file_info,
     ) -> c_int {
         let path = self.resolve_path(path);
-        log::trace!("called passthrough_read(path={:?})", path);
+        log::trace!("read(path={:?})", path);
 
         let fd;
         if fi == ptr::null_mut() {
             fd = libc::open(path.as_ptr(), libc::O_RDONLY as i32);
         } else {
-            let fi = &mut *fi;
-            fd = fi.fh as c_int;
+            fd = (&mut *fi).fh as c_int;
         }
         if fd == -1 {
             return -errno();
@@ -170,5 +345,84 @@ impl fuse::FS for Filesystem {
         }
 
         res
+    }
+
+    unsafe fn write(
+        &self,
+        path: &CStr,
+        buf: &[u8],
+        offset: libc::off_t,
+        fi: *mut fuse::sys::fuse_file_info,
+    ) -> c_int {
+        let path = self.resolve_path(path);
+        log::trace!("write(path={:?})", path);
+
+        let fd;
+        if fi == ptr::null_mut() {
+            fd = libc::open(path.as_ptr(), libc::O_WRONLY);
+        } else {
+            fd = (&mut *fi).fh as c_int;
+        }
+
+        let mut res = libc::pwrite(fd, buf.as_ptr() as *const c_void, buf.len(), offset) as c_int;
+        if res == -1 {
+            res = -errno();
+        }
+
+        if fi == ptr::null_mut() {
+            libc::close(fd);
+        }
+
+        res
+    }
+
+    unsafe fn statfs(&self, path: &CStr, stbuf: *mut libc::statvfs) -> c_int {
+        let path = self.resolve_path(path);
+        log::trace!("statfs(path={:?})", path);
+
+        let res = libc::statvfs(path.as_ptr(), stbuf);
+        if res == -1 {
+            return -errno();
+        }
+        0
+    }
+
+    unsafe fn release(&self, path: &CStr, fi: *mut fuse::sys::fuse_file_info) -> c_int {
+        let path = self.resolve_path(path);
+        log::trace!("release(path={:?})", path);
+        debug_assert!(!fi.is_null());
+        libc::close((&mut *fi).fh as i32);
+        0
+    }
+}
+
+unsafe fn mknod_wrapper(
+    dirfd: c_int,
+    path: &CStr,
+    link: Option<&CStr>,
+    mode: libc::mode_t,
+    rdev: libc::dev_t,
+) -> c_int {
+    match mode & libc::S_IFMT {
+        libc::S_IFREG => {
+            let res = libc::openat(
+                dirfd,
+                path.as_ptr(),
+                libc::O_CREAT | libc::O_EXCL | libc::O_WRONLY,
+                mode,
+            );
+            if res >= 0 {
+                return libc::close(res);
+            }
+            res
+        }
+        libc::S_IFDIR => libc::mkdirat(dirfd, path.as_ptr(), mode),
+        libc::S_IFLNK => libc::symlinkat(
+            link.map(|s| s.as_ptr()).unwrap_or_else(ptr::null),
+            dirfd,
+            path.as_ptr(),
+        ),
+        libc::S_IFIFO => libc::mkfifoat(dirfd, path.as_ptr(), mode),
+        _ => libc::mknodat(dirfd, path.as_ptr(), mode, rdev),
     }
 }
