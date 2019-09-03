@@ -5,7 +5,10 @@ use std::{
     env,
     ffi::{CStr, CString},
     mem,
-    os::raw::{c_char, c_int, c_uint, c_void},
+    os::{
+        raw::{c_char, c_int, c_uint, c_void},
+        unix::io::{AsRawFd, RawFd},
+    },
     ptr,
 };
 
@@ -20,6 +23,30 @@ fn main() {
     fuse::main(Filesystem {
         source: env::current_dir().unwrap(),
     })
+}
+
+enum Fd {
+    Opened(RawFd),
+    Temp(RawFd),
+}
+
+impl AsRawFd for Fd {
+    fn as_raw_fd(&self) -> RawFd {
+        match *self {
+            Fd::Opened(fd) => fd,
+            Fd::Temp(fd) => fd,
+        }
+    }
+}
+
+impl Drop for Fd {
+    fn drop(&mut self) {
+        if let Fd::Temp(fd) = *self {
+            unsafe {
+                libc::close(fd);
+            }
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -300,28 +327,27 @@ impl FS for Filesystem {
         let path = self.resolve_path(path);
         log::trace!("read(path={:?})", path);
 
-        let (fd, oneshot) = if let Some(fi) = fi {
-            (fi.fh() as c_int, false)
+        let fd = if let Some(fi) = fi {
+            Fd::Opened(fi.fh() as c_int)
         } else {
-            let fh = unsafe { libc::open(path.as_ptr(), libc::O_RDONLY) };
-            (fh, true)
+            let fd = unsafe { libc::open(path.as_ptr(), libc::O_RDONLY) };
+            if fd == -1 {
+                return -errno();
+            }
+            Fd::Temp(fd)
         };
-        if fd == -1 {
+
+        let res = unsafe {
+            libc::pread(
+                fd.as_raw_fd(),
+                buf.as_mut_ptr() as *mut c_void,
+                buf.len(),
+                offset,
+            ) as c_int
+        };
+        if res == -1 {
             return -errno();
         }
-
-        let mut res =
-            unsafe { libc::pread(fd, buf.as_mut_ptr() as *mut c_void, buf.len(), offset) as c_int };
-        if res == -1 {
-            res = -errno();
-        }
-
-        if oneshot {
-            unsafe {
-                libc::close(fd);
-            }
-        }
-
         res
     }
 
@@ -335,25 +361,27 @@ impl FS for Filesystem {
         let path = self.resolve_path(path);
         log::trace!("write(path={:?})", path);
 
-        let (fd, oneshot) = if let Some(fi) = fi {
-            (fi.fh() as c_int, false)
+        let fd = if let Some(fi) = fi {
+            Fd::Opened(fi.fh() as c_int)
         } else {
-            let fh = unsafe { libc::open(path.as_ptr(), libc::O_WRONLY) };
-            (fh, true)
+            let fd = unsafe { libc::open(path.as_ptr(), libc::O_WRONLY) };
+            if fd == -1 {
+                return -errno();
+            }
+            Fd::Temp(fd)
         };
 
-        let mut res =
-            unsafe { libc::pwrite(fd, buf.as_ptr() as *const c_void, buf.len(), offset) as c_int };
+        let res = unsafe {
+            libc::pwrite(
+                fd.as_raw_fd(),
+                buf.as_ptr() as *const c_void,
+                buf.len(),
+                offset,
+            ) as c_int
+        };
         if res == -1 {
-            res = -errno();
+            return -errno();
         }
-
-        if oneshot {
-            unsafe {
-                libc::close(fd);
-            }
-        }
-
         res
     }
 
@@ -371,8 +399,11 @@ impl FS for Filesystem {
     fn release(&self, path: &CStr, fi: &mut FileInfo) -> c_int {
         let path = self.resolve_path(path);
         log::trace!("release(path={:?})", path);
-        unsafe {
-            libc::close(fi.fh() as i32);
+        if fi.fh() != 0 {
+            unsafe {
+                libc::close(fi.fh() as i32);
+            }
+            *fi.fh_mut() = 0;
         }
         0
     }
