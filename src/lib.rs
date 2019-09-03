@@ -7,7 +7,8 @@ pub mod sys {
 }
 
 use libc::{
-    c_char, c_double, c_int, c_uint, c_void, dev_t, gid_t, mode_t, off_t, stat, statvfs, uid_t,
+    c_char, c_double, c_int, c_uint, c_void, dev_t, gid_t, mode_t, off_t, stat, statvfs, timespec,
+    uid_t,
 };
 use std::{
     env,
@@ -95,24 +96,11 @@ pub trait FS {
     /// Clean up the filesystem.
     fn destroy(&mut self) {}
 
-    /// Get file attributes.
-    fn getattr(&self, path: &CStr, stbuf: &mut stat, fi: Option<&mut FileInfo>) -> c_int;
-
     /// Check the file access permissions.
     fn access(&self, path: &CStr, mask: c_int) -> c_int;
 
     /// Read the target of a symbolic link.
     fn readlink(&self, path: &CStr, buf: &mut [u8]) -> c_int;
-
-    /// Read a directory.
-    fn readdir(
-        &self,
-        path: &CStr,
-        filler: &mut FillDir,
-        offset: off_t,
-        fi: Option<&mut FileInfo>,
-        flags: fuse_readdir_flags,
-    ) -> c_int;
 
     /// Create a file node.
     fn mknod(&self, path: &CStr, mode: mode_t, rdev: dev_t) -> c_int;
@@ -135,14 +123,20 @@ pub trait FS {
     /// Create a hard link to a file.
     fn link(&self, path_from: &CStr, path_to: &CStr) -> c_int;
 
-    /// Change the permission bits of a file.
-    fn chmod(&self, path: &CStr, mode: mode_t, fi: Option<&mut FileInfo>) -> c_int;
+    /// Get file system statistics.
+    fn statfs(&self, path: &CStr, stbuf: &mut statvfs) -> c_int;
 
-    /// Change the owner and group of a file.
-    fn chown(&self, path: &CStr, uid: uid_t, gid: gid_t, fi: Option<&mut FileInfo>) -> c_int;
+    /// Set extended attributes.
+    fn setxattr(&self, path: &CStr, name: &CStr, value: &[u8], flags: c_int) -> c_int;
 
-    /// Change the size of a file.
-    fn truncate(&self, path: &CStr, size: off_t, fi: Option<&mut FileInfo>) -> c_int;
+    /// Get extended attributes.
+    fn getxattr(&self, path: &CStr, name: &CStr, value: &mut [u8]) -> c_int;
+
+    /// List extended attributes.
+    fn listxattr(&self, path: &CStr, list: &mut [u8]) -> c_int;
+
+    /// Remove extended attributes.
+    fn removexattr(&self, path: &CStr, name: &CStr) -> c_int;
 
     /// Create and open a file.
     fn create(&self, path: &CStr, mode: mode_t, fi: &mut FileInfo) -> c_int;
@@ -156,11 +150,59 @@ pub trait FS {
     /// Write data to an opened file.
     fn write(&self, path: &CStr, buf: &[u8], offset: off_t, fi: Option<&mut FileInfo>) -> c_int;
 
-    /// Get file system statistics.
-    fn statfs(&self, path: &CStr, stbuf: &mut statvfs) -> c_int;
+    /// Get file attributes.
+    fn getattr(&self, path: &CStr, stbuf: &mut stat, fi: Option<&mut FileInfo>) -> c_int;
+
+    /// Change the permission bits of a file.
+    fn chmod(&self, path: &CStr, mode: mode_t, fi: Option<&mut FileInfo>) -> c_int;
+
+    /// Change the owner and group of a file.
+    fn chown(&self, path: &CStr, uid: uid_t, gid: gid_t, fi: Option<&mut FileInfo>) -> c_int;
+
+    /// Change the size of a file.
+    fn truncate(&self, path: &CStr, size: off_t, fi: Option<&mut FileInfo>) -> c_int;
+
+    /// Change the access and modification times of a file with nanosecond resolution.
+    fn utimens(&self, path: &CStr, ts: &[timespec; 2], fi: Option<&mut FileInfo>) -> c_int;
+
+    /// Synchronize the file contents.
+    fn fsync(&self, path: &CStr, isdatasync: c_int, fi: Option<&mut FileInfo>) -> c_int;
+
+    /// Allocate the space for an opened file.
+    fn fallocate(
+        &self,
+        path: &CStr,
+        mode: c_int,
+        offset: off_t,
+        length: off_t,
+        fi: Option<&mut FileInfo>,
+    ) -> c_int;
+
+    /// Copy a range of data from one file to another.
+    fn copy_file_range(
+        &self,
+        path_in: &CStr,
+        fi_in: Option<&mut FileInfo>,
+        offset_in: off_t,
+        path_out: &CStr,
+        fi_out: Option<&mut FileInfo>,
+        offset_out: off_t,
+        len: usize,
+        flags: c_int,
+    ) -> isize;
 
     /// Release an opened file.
     fn release(&self, path: &CStr, fi: &mut FileInfo) -> c_int;
+
+    /// Read a directory.
+    fn readdir(
+        &self,
+        path: &CStr,
+        filler: &mut FillDir,
+        offset: off_t,
+        fi: Option<&mut FileInfo>,
+        flags: fuse_readdir_flags,
+    ) -> c_int;
 }
 
 pub fn main<F: FS>(fuse: F) -> ! {
@@ -193,8 +235,10 @@ mod ops {
         },
         Config, ConnInfo, FileInfo, FillDir, FS,
     };
-    use libc::{c_char, c_int, c_uint, c_void, dev_t, gid_t, mode_t, off_t, stat, statvfs, uid_t};
-    use std::{ffi::CStr, mem, ptr::NonNull, slice};
+    use libc::{
+        c_char, c_int, c_uint, c_void, dev_t, gid_t, mode_t, off_t, stat, statvfs, timespec, uid_t,
+    };
+    use std::{convert::TryFrom, ffi::CStr, mem, ptr::NonNull, slice};
 
     #[allow(nonstandard_style)]
     type c_str = *const c_char;
@@ -205,20 +249,20 @@ mod ops {
             bmap: None,
             chmod: Some(lib_chmod::<F>),
             chown: Some(lib_chown::<F>),
-            copy_file_range: None,
+            copy_file_range: Some(lib_copy_file_range::<F>),
             create: Some(lib_create::<F>),
             destroy: Some(lib_destroy::<F>),
-            fallocate: None,
+            fallocate: Some(lib_fallocate::<F>),
             flock: None,
             flush: None,
-            fsync: None,
+            fsync: Some(lib_fsync::<F>),
             fsyncdir: None,
             getattr: Some(lib_getattr::<F>),
-            getxattr: None,
+            getxattr: Some(lib_getxattr::<F>),
             init: Some(lib_init::<F>),
             ioctl: None,
             link: Some(lib_link::<F>),
-            listxattr: None,
+            listxattr: Some(lib_listxattr::<F>),
             lock: None,
             mkdir: Some(lib_mkdir::<F>),
             mknod: Some(lib_mknod::<F>),
@@ -231,15 +275,15 @@ mod ops {
             readlink: Some(lib_readlink::<F>),
             release: Some(lib_release::<F>),
             releasedir: None,
-            removexattr: None,
+            removexattr: Some(lib_removexattr::<F>),
             rename: Some(lib_rename::<F>),
             rmdir: Some(lib_rmdir::<F>),
-            setxattr: None,
+            setxattr: Some(lib_setxattr::<F>),
             statfs: Some(lib_statfs::<F>),
             symlink: Some(lib_symlink::<F>),
             truncate: Some(lib_truncate::<F>),
             unlink: Some(lib_unlink::<F>),
-            utimens: None,
+            utimens: Some(lib_utimens::<F>),
             write_buf: None,
             write: Some(lib_write::<F>),
         }
@@ -422,6 +466,19 @@ mod ops {
         })
     }
 
+    unsafe extern "C" fn lib_utimens<F: FS>(
+        path: c_str,
+        ts: *const timespec,
+        fi: *mut fuse_file_info,
+    ) -> c_int {
+        let ts =
+            <[timespec; 2]>::try_from(std::slice::from_raw_parts(ts, 2)).expect("invalid length");
+        let mut fi = NonNull::new(fi).map(NonNull::cast::<FileInfo>);
+        get_private_data(|fs: &F| {
+            fs.utimens(CStr::from_ptr(path), &ts, fi.as_mut().map(|fi| fi.as_mut()))
+        })
+    }
+
     unsafe extern "C" fn lib_create<F: FS>(
         path: c_str,
         mode: mode_t,
@@ -474,5 +531,101 @@ mod ops {
         debug_assert!(!fi.is_null());
         let mut fi = NonNull::new_unchecked(fi).cast::<FileInfo>();
         get_private_data(|fs: &F| fs.release(CStr::from_ptr(path), fi.as_mut()))
+    }
+
+    unsafe extern "C" fn lib_fsync<F: FS>(
+        path: c_str,
+        isdatasync: c_int,
+        fi: *mut fuse_file_info,
+    ) -> c_int {
+        let mut fi = NonNull::new(fi).map(NonNull::cast::<FileInfo>);
+        get_private_data(|fs: &F| {
+            fs.fsync(
+                CStr::from_ptr(path),
+                isdatasync,
+                fi.as_mut().map(|fi| fi.as_mut()),
+            )
+        })
+    }
+
+    unsafe extern "C" fn lib_fallocate<F: FS>(
+        path: c_str,
+        mode: c_int,
+        offset: off_t,
+        length: off_t,
+        fi: *mut fuse_file_info,
+    ) -> c_int {
+        let mut fi = NonNull::new(fi).map(NonNull::cast::<FileInfo>);
+        get_private_data(|fs: &F| {
+            fs.fallocate(
+                CStr::from_ptr(path),
+                mode,
+                offset,
+                length,
+                fi.as_mut().map(|fi| fi.as_mut()),
+            )
+        })
+    }
+
+    unsafe extern "C" fn lib_setxattr<F: FS>(
+        path: c_str,
+        name: c_str,
+        value: *const c_char,
+        size: usize,
+        flags: c_int,
+    ) -> c_int {
+        let value = std::slice::from_raw_parts(value as *const u8, size);
+        get_private_data(|fs: &F| {
+            fs.setxattr(CStr::from_ptr(path), CStr::from_ptr(name), value, flags)
+        })
+    }
+
+    unsafe extern "C" fn lib_getxattr<F: FS>(
+        path: c_str,
+        name: c_str,
+        value: *mut c_char,
+        size: usize,
+    ) -> c_int {
+        let value = std::slice::from_raw_parts_mut(value as *mut u8, size);
+        get_private_data(|fs: &F| fs.getxattr(CStr::from_ptr(path), CStr::from_ptr(name), value))
+    }
+
+    unsafe extern "C" fn lib_listxattr<F: FS>(
+        path: c_str,
+        list: *mut c_char,
+        size: usize,
+    ) -> c_int {
+        let list = std::slice::from_raw_parts_mut(list as *mut u8, size);
+        get_private_data(|fs: &F| fs.listxattr(CStr::from_ptr(path), list))
+    }
+
+    unsafe extern "C" fn lib_removexattr<F: FS>(path: c_str, name: c_str) -> c_int {
+        get_private_data(|fs: &F| fs.removexattr(CStr::from_ptr(path), CStr::from_ptr(name)))
+    }
+
+    unsafe extern "C" fn lib_copy_file_range<F: FS>(
+        path_in: c_str,
+        fi_in: *mut fuse_file_info,
+        offset_in: off_t,
+        path_out: c_str,
+        fi_out: *mut fuse_file_info,
+        offset_out: off_t,
+        len: usize,
+        flags: c_int,
+    ) -> isize {
+        let mut fi_in = NonNull::new(fi_in).map(NonNull::cast::<FileInfo>);
+        let mut fi_out = NonNull::new(fi_out).map(NonNull::cast::<FileInfo>);
+        get_private_data(|fs: &F| {
+            fs.copy_file_range(
+                CStr::from_ptr(path_in),
+                fi_in.as_mut().map(|fi| fi.as_mut()),
+                offset_in,
+                CStr::from_ptr(path_out),
+                fi_out.as_mut().map(|fi| fi.as_mut()),
+                offset_out,
+                len,
+                flags,
+            )
+        })
     }
 }
