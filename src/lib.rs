@@ -13,7 +13,6 @@ use std::{
     env,
     ffi::{self, CStr},
     mem,
-    ptr::NonNull,
 };
 use sys::{
     fuse_config, fuse_conn_info, fuse_file_info, fuse_fill_dir_flags, fuse_operations,
@@ -24,10 +23,6 @@ use sys::{
 pub struct FileInfo(fuse_file_info);
 
 impl FileInfo {
-    unsafe fn from_ptr(fi: *mut fuse_file_info) -> Option<NonNull<Self>> {
-        NonNull::new(fi).map(NonNull::cast)
-    }
-
     pub fn fh(&self) -> u64 {
         self.0.fh
     }
@@ -264,10 +259,10 @@ mod ops {
         cfg: *mut fuse_config,
     ) -> *mut c_void {
         debug_assert!(!conn.is_null());
-        let mut conn = NonNull::new_unchecked(conn as *mut ConnInfo);
+        let mut conn = NonNull::new_unchecked(conn).cast::<ConnInfo>();
 
         debug_assert!(!cfg.is_null());
-        let mut cfg = NonNull::new_unchecked(cfg as *mut Config);
+        let mut cfg = NonNull::new_unchecked(cfg).cast::<Config>();
 
         let cx = crate::sys::fuse_get_context();
         debug_assert!(!cx.is_null());
@@ -291,9 +286,10 @@ mod ops {
         stbuf: *mut stat,
         fi: *mut fuse_file_info,
     ) -> c_int {
+        debug_assert!(!stbuf.is_null());
+        let mut stbuf = NonNull::new_unchecked(stbuf);
+        let mut fi = NonNull::new(fi).map(NonNull::cast::<FileInfo>);
         get_private_data(|fs: &F| {
-            let mut stbuf = NonNull::new(stbuf).expect("stbuf should not be null");
-            let mut fi = FileInfo::from_ptr(fi);
             fs.getattr(
                 CStr::from_ptr(path),
                 stbuf.as_mut(),
@@ -322,14 +318,16 @@ mod ops {
         fi: *mut fuse_file_info,
         flags: fuse_readdir_flags,
     ) -> c_int {
+        let path = CStr::from_ptr(path);
+        let mut filler = FillDir {
+            buf,
+            filler: filler.expect("filler should not be null"),
+        };
+        let mut fi = NonNull::new(fi).map(NonNull::cast::<FileInfo>);
         get_private_data(|fs: &F| {
-            let mut fi = FileInfo::from_ptr(fi);
             fs.readdir(
-                CStr::from_ptr(path),
-                &mut FillDir {
-                    buf,
-                    filler: filler.expect("filler should not be null"),
-                },
+                path,
+                &mut filler,
                 offset,
                 fi.as_mut().map(|fi| fi.as_mut()),
                 flags,
@@ -382,8 +380,8 @@ mod ops {
         mode: mode_t,
         fi: *mut fuse_file_info,
     ) -> c_int {
+        let mut fi = NonNull::new(fi).map(NonNull::cast::<FileInfo>);
         get_private_data(|fs: &F| {
-            let mut fi = FileInfo::from_ptr(fi);
             fs.chmod(
                 CStr::from_ptr(path),
                 mode,
@@ -398,8 +396,8 @@ mod ops {
         gid: gid_t,
         fi: *mut fuse_file_info,
     ) -> c_int {
+        let mut fi = NonNull::new(fi).map(NonNull::cast::<FileInfo>);
         get_private_data(|fs: &F| {
-            let mut fi = FileInfo::from_ptr(fi);
             fs.chown(
                 CStr::from_ptr(path),
                 uid,
@@ -414,8 +412,8 @@ mod ops {
         size: off_t,
         fi: *mut fuse_file_info,
     ) -> c_int {
+        let mut fi = NonNull::new(fi).map(NonNull::cast::<FileInfo>);
         get_private_data(|fs: &F| {
-            let mut fi = FileInfo::from_ptr(fi);
             fs.truncate(
                 CStr::from_ptr(path),
                 size,
@@ -429,19 +427,15 @@ mod ops {
         mode: mode_t,
         fi: *mut fuse_file_info,
     ) -> c_int {
-        get_private_data(|fs: &F| {
-            debug_assert!(!fi.is_null());
-            let mut fi = NonNull::new_unchecked(fi as *mut FileInfo);
-            fs.create(CStr::from_ptr(path), mode, fi.as_mut())
-        })
+        debug_assert!(!fi.is_null());
+        let mut fi = NonNull::new_unchecked(fi).cast::<FileInfo>();
+        get_private_data(|fs: &F| fs.create(CStr::from_ptr(path), mode, fi.as_mut()))
     }
 
     unsafe extern "C" fn lib_open<F: FS>(path: *const c_char, fi: *mut fuse_file_info) -> c_int {
-        get_private_data(|fs: &F| {
-            debug_assert!(!fi.is_null());
-            let mut fi = NonNull::new_unchecked(fi as *mut FileInfo);
-            fs.open(CStr::from_ptr(path), fi.as_mut())
-        })
+        debug_assert!(!fi.is_null());
+        let mut fi = NonNull::new_unchecked(fi).cast::<FileInfo>();
+        get_private_data(|fs: &F| fs.open(CStr::from_ptr(path), fi.as_mut()))
     }
 
     unsafe extern "C" fn lib_read<F: FS>(
@@ -451,12 +445,10 @@ mod ops {
         offset: off_t,
         fi: *mut fuse_file_info,
     ) -> c_int {
-        get_private_data(|fs: &F| {
-            let path = CStr::from_ptr(path);
-            let buf = std::slice::from_raw_parts_mut(buf as *mut u8, size);
-            let mut fi = FileInfo::from_ptr(fi);
-            fs.read(path, buf, offset, fi.as_mut().map(|fi| fi.as_mut()))
-        })
+        let path = CStr::from_ptr(path);
+        let buf = std::slice::from_raw_parts_mut(buf as *mut u8, size);
+        let mut fi = NonNull::new(fi).map(NonNull::cast::<FileInfo>);
+        get_private_data(|fs: &F| fs.read(path, buf, offset, fi.as_mut().map(|fi| fi.as_mut())))
     }
 
     unsafe extern "C" fn lib_write<F: FS>(
@@ -466,27 +458,21 @@ mod ops {
         offset: off_t,
         fi: *mut fuse_file_info,
     ) -> c_int {
-        get_private_data(|fs: &F| {
-            let path = CStr::from_ptr(path);
-            let buf = std::slice::from_raw_parts(buf as *const u8, size);
-            let mut fi = FileInfo::from_ptr(fi);
-            fs.write(path, buf, offset, fi.as_mut().map(|fi| fi.as_mut()))
-        })
+        let path = CStr::from_ptr(path);
+        let buf = std::slice::from_raw_parts(buf as *const u8, size);
+        let mut fi = NonNull::new(fi).map(NonNull::cast::<FileInfo>);
+        get_private_data(|fs: &F| fs.write(path, buf, offset, fi.as_mut().map(|fi| fi.as_mut())))
     }
 
     unsafe extern "C" fn lib_statfs<F: FS>(path: c_str, stbuf: *mut statvfs) -> c_int {
-        get_private_data(|fs: &F| {
-            debug_assert!(!stbuf.is_null());
-            let mut stbuf = NonNull::new_unchecked(stbuf);
-            fs.statfs(CStr::from_ptr(path), stbuf.as_mut())
-        })
+        debug_assert!(!stbuf.is_null());
+        let mut stbuf = NonNull::new_unchecked(stbuf);
+        get_private_data(|fs: &F| fs.statfs(CStr::from_ptr(path), stbuf.as_mut()))
     }
 
     unsafe extern "C" fn lib_release<F: FS>(path: c_str, fi: *mut fuse_file_info) -> c_int {
-        get_private_data(|fs: &F| {
-            debug_assert!(!fi.is_null());
-            let mut fi = NonNull::new_unchecked(fi as *mut FileInfo);
-            fs.release(CStr::from_ptr(path), fi.as_mut())
-        })
+        debug_assert!(!fi.is_null());
+        let mut fi = NonNull::new_unchecked(fi).cast::<FileInfo>();
+        get_private_data(|fs: &F| fs.release(CStr::from_ptr(path), fi.as_mut()))
     }
 }
