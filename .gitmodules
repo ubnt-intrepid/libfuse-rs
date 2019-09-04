@@ -1,0 +1,3 @@
+[submodule "libfuse-sys/-b"]
+	path = libfuse-sys/libfuse
+	url = https://github.com/libfuse/libfuse.git

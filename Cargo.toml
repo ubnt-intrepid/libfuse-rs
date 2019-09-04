@@ -1,22 +1,23 @@
 [package]
-name = "fuse3-rs"
+name = "libfuse"
 version = "0.0.0"
 description = "A file system example using libfuse 3 with bindgen"
 publish = false
 authors = ["Yusuke Sasaki <yusuke.sasaki.nuem@gmail.com>"]
 edition = "2018"
-build = "build.rs"
 
 [lib]
 name = "fuse"
 path = "src/lib.rs"
 
 [dependencies]
+libfuse-sys = { path = "libfuse-sys" }
 libc = "0.2"
 log = "0.4"
 nix = "0.15"
 pretty_env_logger = "0.2"
 
-[build-dependencies]
-bindgen = "0.51"
-pkg-config = "0.3"
+[workspace]
+members = [
+  "libfuse-sys",
+]

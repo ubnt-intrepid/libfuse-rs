@@ -1,10 +1,6 @@
 //! A wrapper for libfuse3 using bindgen.
 
-#[allow(nonstandard_style, dead_code)]
-pub mod sys {
-    use libc::{flock, iovec, stat, statvfs, timespec};
-    include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
-}
+pub use libfuse_sys as sys;
 
 use libc::{
     c_char, c_double, c_int, c_uint, c_void, dev_t, gid_t, mode_t, off_t, stat, statvfs, timespec,
@@ -15,7 +11,7 @@ use std::{
     ffi::{self, CStr},
     mem,
 };
-use sys::{
+use libfuse_sys::{
     fuse_config, fuse_conn_info, fuse_file_info, fuse_fill_dir_flags, fuse_operations,
     fuse_readdir_flags,
 };
