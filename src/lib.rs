@@ -1,19 +1,32 @@
 //! A wrapper for libfuse3 using bindgen.
 
-pub use libfuse_sys as sys;
-
+use bitflags::bitflags;
 use libc::{
-    c_char, c_double, c_int, c_uint, c_void, dev_t, gid_t, mode_t, off_t, stat, statvfs, timespec,
+    c_char, //
+    c_double,
+    c_int,
+    c_uint,
+    c_void,
+    dev_t,
+    gid_t,
+    mode_t,
+    off_t,
+    stat,
+    statvfs,
+    timespec,
     uid_t,
+};
+use libfuse_sys::{
+    fuse_config, //
+    fuse_conn_info,
+    fuse_file_info,
+    fuse_fill_dir_flags,
+    fuse_operations,
 };
 use std::{
     env,
     ffi::{self, CStr},
-    mem,
-};
-use libfuse_sys::{
-    fuse_config, fuse_conn_info, fuse_file_info, fuse_fill_dir_flags, fuse_operations,
-    fuse_readdir_flags,
+    mem, ptr,
 };
 
 #[repr(C)]
@@ -73,14 +86,34 @@ pub struct FillDir {
 }
 
 impl FillDir {
-    pub unsafe fn fill(
+    pub fn add(
         &mut self,
         name: &CStr,
-        stbuf: &stat,
+        stbuf: Option<&stat>,
         off: off_t,
-        flags: fuse_fill_dir_flags,
-    ) -> c_int {
-        (self.filler)(self.buf, name.as_ptr(), stbuf, off, flags)
+        flags: FillDirFlags,
+    ) -> bool {
+        unsafe {
+            (self.filler)(
+                self.buf,
+                name.as_ptr(),
+                stbuf.map_or(ptr::null(), |s| s as *const _),
+                off,
+                flags.bits(),
+            ) == 1
+        }
+    }
+}
+
+bitflags! {
+    pub struct FillDirFlags: u32 {
+        const PLUS = libfuse_sys::fuse_fill_dir_flags_FUSE_FILL_DIR_PLUS;
+    }
+}
+
+bitflags! {
+    pub struct ReadDirFlags: u32 {
+        const PLUS = libfuse_sys::fuse_readdir_flags_FUSE_READDIR_PLUS;
     }
 }
 
@@ -197,7 +230,7 @@ pub trait FS {
         filler: &mut FillDir,
         offset: off_t,
         fi: Option<&mut FileInfo>,
-        flags: fuse_readdir_flags,
+        flags: ReadDirFlags,
     ) -> c_int;
 }
 
@@ -211,7 +244,7 @@ pub fn main<F: FS>(fuse: F) -> ! {
     let ops = ops::make_operations::<F>();
 
     let code = unsafe {
-        crate::sys::fuse_main_real(
+        libfuse_sys::fuse_main_real(
             c_args.len() as i32,
             c_args.as_mut_ptr() as *mut *mut c_char,
             &ops,
@@ -224,15 +257,13 @@ pub fn main<F: FS>(fuse: F) -> ! {
 }
 
 mod ops {
-    use crate::{
-        sys::{
-            fuse_config, fuse_conn_info, fuse_file_info, fuse_fill_dir_t, fuse_operations,
-            fuse_readdir_flags,
-        },
-        Config, ConnInfo, FileInfo, FillDir, FS,
-    };
+    use crate::{Config, ConnInfo, FileInfo, FillDir, ReadDirFlags, FS};
     use libc::{
         c_char, c_int, c_uint, c_void, dev_t, gid_t, mode_t, off_t, stat, statvfs, timespec, uid_t,
+    };
+    use libfuse_sys::{
+        fuse_config, fuse_conn_info, fuse_file_info, fuse_fill_dir_t, fuse_operations,
+        fuse_readdir_flags,
     };
     use std::{convert::TryFrom, ffi::CStr, mem, ptr::NonNull, slice};
 
@@ -286,7 +317,7 @@ mod ops {
     }
 
     unsafe fn get_private_data<F: FS, T>(f: impl FnOnce(&F) -> T) -> T {
-        let cx = crate::sys::fuse_get_context();
+        let cx = libfuse_sys::fuse_get_context();
         debug_assert!(!cx.is_null());
         let cx = &mut *cx;
         debug_assert!(!cx.private_data.is_null());
@@ -304,7 +335,7 @@ mod ops {
         debug_assert!(!cfg.is_null());
         let mut cfg = NonNull::new_unchecked(cfg).cast::<Config>();
 
-        let cx = crate::sys::fuse_get_context();
+        let cx = libfuse_sys::fuse_get_context();
         debug_assert!(!cx.is_null());
 
         let data_ptr = (&mut *cx).private_data;
@@ -370,7 +401,7 @@ mod ops {
                 &mut filler,
                 offset,
                 fi.as_mut().map(|fi| fi.as_mut()),
-                flags,
+                ReadDirFlags::from_bits_truncate(flags),
             )
         })
     }

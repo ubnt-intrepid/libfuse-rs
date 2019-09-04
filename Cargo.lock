@@ -202,6 +202,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 name = "libfuse"
 version = "0.0.0"
 dependencies = [
+ "bitflags 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "libc 0.2.62 (registry+https://github.com/rust-lang/crates.io-index)",
  "libfuse-sys 0.0.0",
  "log 0.4.8 (registry+https://github.com/rust-lang/crates.io-index)",

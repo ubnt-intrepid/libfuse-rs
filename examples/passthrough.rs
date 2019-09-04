@@ -1,4 +1,4 @@
-use fuse::{FileInfo, FS};
+use fuse::{FileInfo, FillDir, FillDirFlags, ReadDirFlags, FS};
 use libc::{
     c_char, c_int, c_uint, c_void, dev_t, gid_t, mode_t, off_t, stat, statvfs, timespec, uid_t,
 };
@@ -76,6 +76,10 @@ impl FS for Filesystem {
         cfg.negative_timeout(0.0);
     }
 
+    fn destroy(&mut self) {
+        log::trace!("destroy()");
+    }
+
     fn getattr(&self, path: &CStr, stbuf: &mut stat, _fi: Option<&mut FileInfo>) -> c_int {
         let path = self.resolve_path(path);
         log::trace!("getattr(path={:?})", path);
@@ -121,10 +125,10 @@ impl FS for Filesystem {
     fn readdir(
         &self,
         path: &CStr,
-        filler: &mut fuse::FillDir,
+        filler: &mut FillDir,
         _offset: off_t,
         _fi: Option<&mut FileInfo>,
-        _flags: fuse::sys::fuse_readdir_flags,
+        _flags: ReadDirFlags,
     ) -> c_int {
         let path = self.resolve_path(path);
         log::trace!("readdir(path={:?})", path);
@@ -148,7 +152,7 @@ impl FS for Filesystem {
 
             let name =
                 unsafe { CStr::from_bytes_with_nul_unchecked(mem::transmute(&de.d_name[..])) };
-            if unsafe { filler.fill(name, &st, 0, 0) } != 0 {
+            if filler.add(name, Some(&st), 0, FillDirFlags::empty()) {
                 break;
             }
         }

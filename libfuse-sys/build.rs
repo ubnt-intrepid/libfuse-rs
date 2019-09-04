@@ -13,7 +13,10 @@ fn main() {
 
     println!("cargo:rerun-if-changed={}", libfuse_dir.display());
     println!("cargo:rustc-link-lib=static=fuse3");
-    println!("cargo:rustc-link-search=native={}", build_dir.join("lib").display());
+    println!(
+        "cargo:rustc-link-search=native={}",
+        build_dir.join("lib").display()
+    );
 
     // Generate Rust bindings.
     let bindings = bindgen::Builder::default()

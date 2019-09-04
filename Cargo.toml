@@ -11,6 +11,7 @@ name = "fuse"
 path = "src/lib.rs"
 
 [dependencies]
+bitflags = "1.1"
 libfuse-sys = { path = "libfuse-sys" }
 libc = "0.2"
 log = "0.4"

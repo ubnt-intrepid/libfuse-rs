@@ -9,7 +9,7 @@
             "type": "gdb",
             "request": "launch",
             "target": "./target/debug/examples/passthrough",
-            "arguments": "-f ${workspaceRoot}/mountpoint",
+            "arguments": "-f -s /tmp/mountpoint",
             "cwd": "${workspaceRoot}",
             "valuesFormatting": "parseText"
         }
