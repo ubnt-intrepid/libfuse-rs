@@ -1,6 +1,9 @@
-use fuse::{FileInfo, FillDir, FillDirFlags, ReadDirFlags, FS};
 use libc::{
     c_char, c_int, c_uint, c_void, dev_t, gid_t, mode_t, off_t, stat, statvfs, timespec, uid_t,
+};
+use libfuse::{
+    dir::{FillDir, ReadDirFlags},
+    Config, ConnInfo, FileInfo, Fuse, Operations,
 };
 use nix::errno::errno;
 use std::{
@@ -20,9 +23,15 @@ fn main() {
         libc::umask(0);
     }
 
-    fuse::main(Filesystem {
-        source: env::current_dir().unwrap(),
-    })
+    Fuse::new("passthrough") //
+        .foreground(true)
+        .threaded(false)
+        .mount(
+            "/tmp/mountpoint",
+            Filesystem {
+                source: env::current_dir().unwrap(),
+            },
+        )
 }
 
 enum Fd {
@@ -67,8 +76,8 @@ impl Filesystem {
     }
 }
 
-impl FS for Filesystem {
-    fn init(&mut self, _conn: &mut fuse::ConnInfo, cfg: &mut fuse::Config) {
+impl Operations for Filesystem {
+    fn init(&mut self, _conn: &mut ConnInfo, cfg: &mut Config) {
         log::trace!("init()");
         cfg.use_ino(1);
         cfg.entry_timeout(0.0);
@@ -152,7 +161,7 @@ impl FS for Filesystem {
 
             let name =
                 unsafe { CStr::from_bytes_with_nul_unchecked(mem::transmute(&de.d_name[..])) };
-            if filler.add(name, Some(&st), 0, FillDirFlags::empty()) {
+            if filler.add(name, Some(&st), 0, Default::default()) {
                 break;
             }
         }

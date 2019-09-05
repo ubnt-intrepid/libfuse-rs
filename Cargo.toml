@@ -7,7 +7,7 @@ authors = ["Yusuke Sasaki <yusuke.sasaki.nuem@gmail.com>"]
 edition = "2018"
 
 [lib]
-name = "fuse"
+name = "libfuse"
 path = "src/lib.rs"
 
 [dependencies]
