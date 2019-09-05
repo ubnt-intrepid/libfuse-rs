@@ -1,6 +1,6 @@
 use crate::{
     dir::{FillDir, ReadDirFlags},
-    Config, ConnInfo, FileInfo,
+    Config, ConnInfo, FileInfo, Result,
 };
 use libc::{
     c_char, c_int, c_uint, c_void, dev_t, gid_t, mode_t, off_t, stat, statvfs, timespec, uid_t,
@@ -24,123 +24,135 @@ pub trait Operations: Send + Sync + 'static {
     fn destroy(&mut self) {}
 
     /// Check the file access permissions.
-    fn access(&self, path: &CStr, mask: c_int) -> c_int {
-        -libc::ENOSYS
+    fn access(&self, path: &CStr, mask: c_int) -> Result<()> {
+        Err(libc::ENOSYS)
     }
 
     /// Read the target of a symbolic link.
-    fn readlink(&self, path: &CStr, buf: &mut [u8]) -> c_int {
-        -libc::ENOSYS
+    fn readlink(&self, path: &CStr, buf: &mut [u8]) -> Result<()> {
+        Err(libc::ENOSYS)
     }
 
     /// Create a file node.
-    fn mknod(&self, path: &CStr, mode: mode_t, rdev: dev_t) -> c_int {
-        -libc::ENOSYS
+    fn mknod(&self, path: &CStr, mode: mode_t, rdev: dev_t) -> Result<()> {
+        Err(libc::ENOSYS)
     }
 
     /// Create a directory.
-    fn mkdir(&self, path: &CStr, mode: mode_t) -> c_int {
-        -libc::ENOSYS
+    fn mkdir(&self, path: &CStr, mode: mode_t) -> Result<()> {
+        Err(libc::ENOSYS)
     }
 
     /// Remove a file.
-    fn unlink(&self, path: &CStr) -> c_int {
-        -libc::ENOSYS
+    fn unlink(&self, path: &CStr) -> Result<()> {
+        Err(libc::ENOSYS)
     }
 
     /// Remove a directory.
-    fn rmdir(&self, path: &CStr) -> c_int {
-        -libc::ENOSYS
+    fn rmdir(&self, path: &CStr) -> Result<()> {
+        Err(libc::ENOSYS)
     }
 
     /// Create a symbolic link.
-    fn symlink(&self, path_from: &CStr, path_to: &CStr) -> c_int {
-        -libc::ENOSYS
+    fn symlink(&self, path_from: &CStr, path_to: &CStr) -> Result<()> {
+        Err(libc::ENOSYS)
     }
 
     /// Rename a file.
-    fn rename(&self, path_from: &CStr, path_to: &CStr, flags: c_uint) -> c_int {
-        -libc::ENOSYS
+    fn rename(&self, path_from: &CStr, path_to: &CStr, flags: c_uint) -> Result<()> {
+        Err(libc::ENOSYS)
     }
 
     /// Create a hard link to a file.
-    fn link(&self, path_from: &CStr, path_to: &CStr) -> c_int {
-        -libc::ENOSYS
+    fn link(&self, path_from: &CStr, path_to: &CStr) -> Result<()> {
+        Err(libc::ENOSYS)
     }
 
     /// Get file system statistics.
-    fn statfs(&self, path: &CStr, stbuf: &mut statvfs) -> c_int {
-        -libc::ENOSYS
+    fn statfs(&self, path: &CStr, stbuf: &mut statvfs) -> Result<()> {
+        Err(libc::ENOSYS)
     }
 
     /// Set extended attributes.
-    fn setxattr(&self, path: &CStr, name: &CStr, value: &[u8], flags: c_int) -> c_int {
-        -libc::ENOSYS
+    fn setxattr(&self, path: &CStr, name: &CStr, value: &[u8], flags: c_int) -> Result<()> {
+        Err(libc::ENOSYS)
     }
 
     /// Get extended attributes.
-    fn getxattr(&self, path: &CStr, name: &CStr, value: &mut [u8]) -> c_int {
-        -libc::ENOSYS
+    fn getxattr(&self, path: &CStr, name: &CStr, value: &mut [u8]) -> Result<()> {
+        Err(libc::ENOSYS)
     }
 
     /// List extended attributes.
-    fn listxattr(&self, path: &CStr, list: &mut [u8]) -> c_int {
-        -libc::ENOSYS
+    fn listxattr(&self, path: &CStr, list: &mut [u8]) -> Result<()> {
+        Err(libc::ENOSYS)
     }
 
     /// Remove extended attributes.
-    fn removexattr(&self, path: &CStr, name: &CStr) -> c_int {
-        -libc::ENOSYS
+    fn removexattr(&self, path: &CStr, name: &CStr) -> Result<()> {
+        Err(libc::ENOSYS)
     }
 
     /// Create and open a file.
-    fn create(&self, path: &CStr, mode: mode_t, fi: &mut FileInfo) -> c_int {
-        -libc::ENOSYS
+    fn create(&self, path: &CStr, mode: mode_t, fi: &mut FileInfo) -> Result<()> {
+        Err(libc::ENOSYS)
     }
 
     /// Open a file.
-    fn open(&self, path: &CStr, fi: &mut FileInfo) -> c_int {
-        -libc::ENOSYS
+    fn open(&self, path: &CStr, fi: &mut FileInfo) -> Result<()> {
+        Err(libc::ENOSYS)
     }
 
     /// Read data from an opened file.
-    fn read(&self, path: &CStr, buf: &mut [u8], offset: off_t, fi: Option<&mut FileInfo>) -> c_int {
-        -libc::ENOSYS
+    fn read(
+        &self,
+        path: &CStr,
+        buf: &mut [u8],
+        offset: off_t,
+        fi: Option<&mut FileInfo>,
+    ) -> Result<()> {
+        Err(libc::ENOSYS)
     }
 
     /// Write data to an opened file.
-    fn write(&self, path: &CStr, buf: &[u8], offset: off_t, fi: Option<&mut FileInfo>) -> c_int {
-        -libc::ENOSYS
+    fn write(
+        &self,
+        path: &CStr,
+        buf: &[u8],
+        offset: off_t,
+        fi: Option<&mut FileInfo>,
+    ) -> Result<()> {
+        Err(libc::ENOSYS)
     }
 
     /// Get file attributes.
-    fn getattr(&self, path: &CStr, stbuf: &mut stat, fi: Option<&mut FileInfo>) -> c_int {
-        -libc::ENOSYS
+    fn getattr(&self, path: &CStr, stbuf: &mut stat, fi: Option<&mut FileInfo>) -> Result<()> {
+        Err(libc::ENOSYS)
     }
 
     /// Change the permission bits of a file.
-    fn chmod(&self, path: &CStr, mode: mode_t, fi: Option<&mut FileInfo>) -> c_int {
-        -libc::ENOSYS
+    fn chmod(&self, path: &CStr, mode: mode_t, fi: Option<&mut FileInfo>) -> Result<()> {
+        Err(libc::ENOSYS)
     }
 
     /// Change the owner and group of a file.
-    fn chown(&self, path: &CStr, uid: uid_t, gid: gid_t, fi: Option<&mut FileInfo>) -> c_int {
-        -libc::ENOSYS
+    fn chown(&self, path: &CStr, uid: uid_t, gid: gid_t, fi: Option<&mut FileInfo>) -> Result<()> {
+        Err(libc::ENOSYS)
     }
 
     /// Change the size of a file.
-    fn truncate(&self, path: &CStr, size: off_t, fi: Option<&mut FileInfo>) -> c_int {
-        -libc::ENOSYS
+    fn truncate(&self, path: &CStr, size: off_t, fi: Option<&mut FileInfo>) -> Result<()> {
+        Err(libc::ENOSYS)
     }
 
     /// Change the access and modification times of a file with nanosecond resolution.
-    fn utimens(&self, path: &CStr, ts: &[timespec; 2], fi: Option<&mut FileInfo>) -> c_int {
-        -libc::ENOSYS
+    fn utimens(&self, path: &CStr, ts: &[timespec; 2], fi: Option<&mut FileInfo>) -> Result<()> {
+        Err(libc::ENOSYS)
     }
 
     /// Synchronize the file contents.
-    fn fsync(&self, path: &CStr, isdatasync: c_int, fi: Option<&mut FileInfo>) -> c_int {
-        -libc::ENOSYS
+    fn fsync(&self, path: &CStr, isdatasync: c_int, fi: Option<&mut FileInfo>) -> Result<()> {
+        Err(libc::ENOSYS)
     }
 
     /// Allocate the space for an opened file.
@@ -151,8 +163,8 @@ pub trait Operations: Send + Sync + 'static {
         offset: off_t,
         length: off_t,
         fi: Option<&mut FileInfo>,
-    ) -> c_int {
-        -libc::ENOSYS
+    ) -> Result<()> {
+        Err(libc::ENOSYS)
     }
 
     /// Copy a range of data from one file to another.
@@ -166,13 +178,13 @@ pub trait Operations: Send + Sync + 'static {
         offset_out: off_t,
         len: usize,
         flags: c_int,
-    ) -> isize {
-        -libc::ENOSYS as isize
+    ) -> Result<isize> {
+        Err(libc::ENOSYS)
     }
 
     /// Release an opened file.
-    fn release(&self, path: &CStr, fi: &mut FileInfo) -> c_int {
-        -libc::ENOSYS
+    fn release(&self, path: &CStr, fi: &mut FileInfo) -> Result<()> {
+        Err(libc::ENOSYS)
     }
 
     /// Read a directory.
@@ -183,8 +195,8 @@ pub trait Operations: Send + Sync + 'static {
         offset: off_t,
         fi: Option<&mut FileInfo>,
         flags: ReadDirFlags,
-    ) -> c_int {
-        -libc::ENOSYS
+    ) -> Result<()> {
+        Err(libc::ENOSYS)
     }
 }
 
@@ -279,16 +291,22 @@ unsafe extern "C" fn lib_getattr<F: Operations>(
     let mut stbuf = NonNull::new_unchecked(stbuf);
     let mut fi = NonNull::new(fi).map(NonNull::cast::<FileInfo>);
     get_private_data(|fs: &F| {
-        fs.getattr(
+        match fs.getattr(
             CStr::from_ptr(path),
             stbuf.as_mut(),
             fi.as_mut().map(|fi| fi.as_mut()),
-        )
+        ) {
+            Ok(()) => 0,
+            Err(errno) => -errno,
+        }
     })
 }
 
 unsafe extern "C" fn lib_access<F: Operations>(path: c_str, mask: c_int) -> c_int {
-    get_private_data(|fs: &F| fs.access(CStr::from_ptr(path), mask))
+    get_private_data(|fs: &F| match fs.access(CStr::from_ptr(path), mask) {
+        Ok(()) => 0,
+        Err(errno) => -errno,
+    })
 }
 
 unsafe extern "C" fn lib_readlink<F: Operations>(
@@ -299,7 +317,10 @@ unsafe extern "C" fn lib_readlink<F: Operations>(
     get_private_data(|fs: &F| {
         let path = CStr::from_ptr(path);
         let buf = slice::from_raw_parts_mut(buf as *mut u8, size);
-        fs.readlink(path, buf)
+        match fs.readlink(path, buf) {
+            Ok(()) => 0,
+            Err(errno) => -errno,
+        }
     })
 }
 
@@ -318,37 +339,57 @@ unsafe extern "C" fn lib_readdir<F: Operations>(
     };
     let mut fi = NonNull::new(fi).map(NonNull::cast::<FileInfo>);
     get_private_data(|fs: &F| {
-        fs.readdir(
+        match fs.readdir(
             path,
             &mut filler,
             offset,
             fi.as_mut().map(|fi| fi.as_mut()),
             ReadDirFlags::from_bits_truncate(flags),
-        )
+        ) {
+            Ok(()) => 0,
+            Err(errno) => -errno,
+        }
     })
 }
 
 unsafe extern "C" fn lib_mknod<F: Operations>(path: c_str, mode: mode_t, rdev: dev_t) -> c_int {
-    get_private_data(|fs: &F| fs.mknod(CStr::from_ptr(path), mode, rdev))
+    get_private_data(|fs: &F| match fs.mknod(CStr::from_ptr(path), mode, rdev) {
+        Ok(()) => 0,
+        Err(errno) => -errno,
+    })
 }
 
 unsafe extern "C" fn lib_mkdir<F: Operations>(path: *const c_char, mode: mode_t) -> c_int {
-    get_private_data(|fs: &F| fs.mkdir(CStr::from_ptr(path), mode))
+    get_private_data(|fs: &F| match fs.mkdir(CStr::from_ptr(path), mode) {
+        Ok(()) => 0,
+        Err(errno) => -errno,
+    })
 }
 
 unsafe extern "C" fn lib_unlink<F: Operations>(path: *const c_char) -> c_int {
-    get_private_data(|fs: &F| fs.unlink(CStr::from_ptr(path)))
+    get_private_data(|fs: &F| match fs.unlink(CStr::from_ptr(path)) {
+        Ok(()) => 0,
+        Err(errno) => -errno,
+    })
 }
 
 unsafe extern "C" fn lib_rmdir<F: Operations>(path: *const c_char) -> c_int {
-    get_private_data(|fs: &F| fs.rmdir(CStr::from_ptr(path)))
+    get_private_data(|fs: &F| match fs.rmdir(CStr::from_ptr(path)) {
+        Ok(()) => 0,
+        Err(errno) => -errno,
+    })
 }
 
 unsafe extern "C" fn lib_symlink<F: Operations>(
     path_from: *const c_char,
     path_to: *const c_char,
 ) -> c_int {
-    get_private_data(|fs: &F| fs.symlink(CStr::from_ptr(path_from), CStr::from_ptr(path_to)))
+    get_private_data(|fs: &F| {
+        match fs.symlink(CStr::from_ptr(path_from), CStr::from_ptr(path_to)) {
+            Ok(()) => 0,
+            Err(errno) => -errno,
+        }
+    })
 }
 
 unsafe extern "C" fn lib_rename<F: Operations>(
@@ -356,14 +397,24 @@ unsafe extern "C" fn lib_rename<F: Operations>(
     path_to: *const c_char,
     flags: c_uint,
 ) -> c_int {
-    get_private_data(|fs: &F| fs.rename(CStr::from_ptr(path_from), CStr::from_ptr(path_to), flags))
+    get_private_data(|fs: &F| {
+        match fs.rename(CStr::from_ptr(path_from), CStr::from_ptr(path_to), flags) {
+            Ok(()) => 0,
+            Err(errno) => -errno,
+        }
+    })
 }
 
 unsafe extern "C" fn lib_link<F: Operations>(
     path_from: *const c_char,
     path_to: *const c_char,
 ) -> c_int {
-    get_private_data(|fs: &F| fs.link(CStr::from_ptr(path_from), CStr::from_ptr(path_to)))
+    get_private_data(
+        |fs: &F| match fs.link(CStr::from_ptr(path_from), CStr::from_ptr(path_to)) {
+            Ok(()) => 0,
+            Err(errno) => -errno,
+        },
+    )
 }
 
 unsafe extern "C" fn lib_chmod<F: Operations>(
@@ -373,11 +424,14 @@ unsafe extern "C" fn lib_chmod<F: Operations>(
 ) -> c_int {
     let mut fi = NonNull::new(fi).map(NonNull::cast::<FileInfo>);
     get_private_data(|fs: &F| {
-        fs.chmod(
+        match fs.chmod(
             CStr::from_ptr(path),
             mode,
             fi.as_mut().map(|fi| fi.as_mut()),
-        )
+        ) {
+            Ok(()) => 0,
+            Err(errno) => -errno,
+        }
     })
 }
 
@@ -389,12 +443,15 @@ unsafe extern "C" fn lib_chown<F: Operations>(
 ) -> c_int {
     let mut fi = NonNull::new(fi).map(NonNull::cast::<FileInfo>);
     get_private_data(|fs: &F| {
-        fs.chown(
+        match fs.chown(
             CStr::from_ptr(path),
             uid,
             gid,
             fi.as_mut().map(|fi| fi.as_mut()),
-        )
+        ) {
+            Ok(()) => 0,
+            Err(errno) => -errno,
+        }
     })
 }
 
@@ -405,11 +462,14 @@ unsafe extern "C" fn lib_truncate<F: Operations>(
 ) -> c_int {
     let mut fi = NonNull::new(fi).map(NonNull::cast::<FileInfo>);
     get_private_data(|fs: &F| {
-        fs.truncate(
+        match fs.truncate(
             CStr::from_ptr(path),
             size,
             fi.as_mut().map(|fi| fi.as_mut()),
-        )
+        ) {
+            Ok(()) => 0,
+            Err(errno) => -errno,
+        }
     })
 }
 
@@ -421,7 +481,10 @@ unsafe extern "C" fn lib_utimens<F: Operations>(
     let ts = <[timespec; 2]>::try_from(std::slice::from_raw_parts(ts, 2)).expect("invalid length");
     let mut fi = NonNull::new(fi).map(NonNull::cast::<FileInfo>);
     get_private_data(|fs: &F| {
-        fs.utimens(CStr::from_ptr(path), &ts, fi.as_mut().map(|fi| fi.as_mut()))
+        match fs.utimens(CStr::from_ptr(path), &ts, fi.as_mut().map(|fi| fi.as_mut())) {
+            Ok(()) => 0,
+            Err(errno) => -errno,
+        }
     })
 }
 
@@ -432,7 +495,12 @@ unsafe extern "C" fn lib_create<F: Operations>(
 ) -> c_int {
     debug_assert!(!fi.is_null());
     let mut fi = NonNull::new_unchecked(fi).cast::<FileInfo>();
-    get_private_data(|fs: &F| fs.create(CStr::from_ptr(path), mode, fi.as_mut()))
+    get_private_data(
+        |fs: &F| match fs.create(CStr::from_ptr(path), mode, fi.as_mut()) {
+            Ok(()) => 0,
+            Err(errno) => -errno,
+        },
+    )
 }
 
 unsafe extern "C" fn lib_open<F: Operations>(
@@ -441,7 +509,10 @@ unsafe extern "C" fn lib_open<F: Operations>(
 ) -> c_int {
     debug_assert!(!fi.is_null());
     let mut fi = NonNull::new_unchecked(fi).cast::<FileInfo>();
-    get_private_data(|fs: &F| fs.open(CStr::from_ptr(path), fi.as_mut()))
+    get_private_data(|fs: &F| match fs.open(CStr::from_ptr(path), fi.as_mut()) {
+        Ok(()) => 0,
+        Err(errno) => -errno,
+    })
 }
 
 unsafe extern "C" fn lib_read<F: Operations>(
@@ -454,7 +525,12 @@ unsafe extern "C" fn lib_read<F: Operations>(
     let path = CStr::from_ptr(path);
     let buf = std::slice::from_raw_parts_mut(buf as *mut u8, size);
     let mut fi = NonNull::new(fi).map(NonNull::cast::<FileInfo>);
-    get_private_data(|fs: &F| fs.read(path, buf, offset, fi.as_mut().map(|fi| fi.as_mut())))
+    get_private_data(
+        |fs: &F| match fs.read(path, buf, offset, fi.as_mut().map(|fi| fi.as_mut())) {
+            Ok(()) => 0,
+            Err(errno) => -errno,
+        },
+    )
 }
 
 unsafe extern "C" fn lib_write<F: Operations>(
@@ -467,19 +543,34 @@ unsafe extern "C" fn lib_write<F: Operations>(
     let path = CStr::from_ptr(path);
     let buf = std::slice::from_raw_parts(buf as *const u8, size);
     let mut fi = NonNull::new(fi).map(NonNull::cast::<FileInfo>);
-    get_private_data(|fs: &F| fs.write(path, buf, offset, fi.as_mut().map(|fi| fi.as_mut())))
+    get_private_data(|fs: &F| {
+        match fs.write(path, buf, offset, fi.as_mut().map(|fi| fi.as_mut())) {
+            Ok(()) => 0,
+            Err(errno) => -errno,
+        }
+    })
 }
 
 unsafe extern "C" fn lib_statfs<F: Operations>(path: c_str, stbuf: *mut statvfs) -> c_int {
     debug_assert!(!stbuf.is_null());
     let mut stbuf = NonNull::new_unchecked(stbuf);
-    get_private_data(|fs: &F| fs.statfs(CStr::from_ptr(path), stbuf.as_mut()))
+    get_private_data(
+        |fs: &F| match fs.statfs(CStr::from_ptr(path), stbuf.as_mut()) {
+            Ok(()) => 0,
+            Err(errno) => -errno,
+        },
+    )
 }
 
 unsafe extern "C" fn lib_release<F: Operations>(path: c_str, fi: *mut fuse_file_info) -> c_int {
     debug_assert!(!fi.is_null());
     let mut fi = NonNull::new_unchecked(fi).cast::<FileInfo>();
-    get_private_data(|fs: &F| fs.release(CStr::from_ptr(path), fi.as_mut()))
+    get_private_data(
+        |fs: &F| match fs.release(CStr::from_ptr(path), fi.as_mut()) {
+            Ok(()) => 0,
+            Err(errno) => -errno,
+        },
+    )
 }
 
 unsafe extern "C" fn lib_fsync<F: Operations>(
@@ -489,11 +580,14 @@ unsafe extern "C" fn lib_fsync<F: Operations>(
 ) -> c_int {
     let mut fi = NonNull::new(fi).map(NonNull::cast::<FileInfo>);
     get_private_data(|fs: &F| {
-        fs.fsync(
+        match fs.fsync(
             CStr::from_ptr(path),
             isdatasync,
             fi.as_mut().map(|fi| fi.as_mut()),
-        )
+        ) {
+            Ok(()) => 0,
+            Err(errno) => -errno,
+        }
     })
 }
 
@@ -506,13 +600,16 @@ unsafe extern "C" fn lib_fallocate<F: Operations>(
 ) -> c_int {
     let mut fi = NonNull::new(fi).map(NonNull::cast::<FileInfo>);
     get_private_data(|fs: &F| {
-        fs.fallocate(
+        match fs.fallocate(
             CStr::from_ptr(path),
             mode,
             offset,
             length,
             fi.as_mut().map(|fi| fi.as_mut()),
-        )
+        ) {
+            Ok(()) => 0,
+            Err(errno) => -errno,
+        }
     })
 }
 
@@ -524,7 +621,12 @@ unsafe extern "C" fn lib_setxattr<F: Operations>(
     flags: c_int,
 ) -> c_int {
     let value = std::slice::from_raw_parts(value as *const u8, size);
-    get_private_data(|fs: &F| fs.setxattr(CStr::from_ptr(path), CStr::from_ptr(name), value, flags))
+    get_private_data(|fs: &F| {
+        match fs.setxattr(CStr::from_ptr(path), CStr::from_ptr(name), value, flags) {
+            Ok(()) => 0,
+            Err(errno) => -errno,
+        }
+    })
 }
 
 unsafe extern "C" fn lib_getxattr<F: Operations>(
@@ -534,7 +636,12 @@ unsafe extern "C" fn lib_getxattr<F: Operations>(
     size: usize,
 ) -> c_int {
     let value = std::slice::from_raw_parts_mut(value as *mut u8, size);
-    get_private_data(|fs: &F| fs.getxattr(CStr::from_ptr(path), CStr::from_ptr(name), value))
+    get_private_data(|fs: &F| {
+        match fs.getxattr(CStr::from_ptr(path), CStr::from_ptr(name), value) {
+            Ok(()) => 0,
+            Err(errno) => -errno,
+        }
+    })
 }
 
 unsafe extern "C" fn lib_listxattr<F: Operations>(
@@ -543,11 +650,19 @@ unsafe extern "C" fn lib_listxattr<F: Operations>(
     size: usize,
 ) -> c_int {
     let list = std::slice::from_raw_parts_mut(list as *mut u8, size);
-    get_private_data(|fs: &F| fs.listxattr(CStr::from_ptr(path), list))
+    get_private_data(|fs: &F| match fs.listxattr(CStr::from_ptr(path), list) {
+        Ok(()) => 0,
+        Err(errno) => -errno,
+    })
 }
 
 unsafe extern "C" fn lib_removexattr<F: Operations>(path: c_str, name: c_str) -> c_int {
-    get_private_data(|fs: &F| fs.removexattr(CStr::from_ptr(path), CStr::from_ptr(name)))
+    get_private_data(
+        |fs: &F| match fs.removexattr(CStr::from_ptr(path), CStr::from_ptr(name)) {
+            Ok(()) => 0,
+            Err(errno) => -errno,
+        },
+    )
 }
 
 unsafe extern "C" fn lib_copy_file_range<F: Operations>(
@@ -563,7 +678,7 @@ unsafe extern "C" fn lib_copy_file_range<F: Operations>(
     let mut fi_in = NonNull::new(fi_in).map(NonNull::cast::<FileInfo>);
     let mut fi_out = NonNull::new(fi_out).map(NonNull::cast::<FileInfo>);
     get_private_data(|fs: &F| {
-        fs.copy_file_range(
+        match fs.copy_file_range(
             CStr::from_ptr(path_in),
             fi_in.as_mut().map(|fi| fi.as_mut()),
             offset_in,
@@ -572,6 +687,9 @@ unsafe extern "C" fn lib_copy_file_range<F: Operations>(
             offset_out,
             len,
             flags,
-        )
+        ) {
+            Ok(len) => len,
+            Err(errno) => -errno as isize,
+        }
     })
 }

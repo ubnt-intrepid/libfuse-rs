@@ -3,7 +3,7 @@ use libc::{
 };
 use libfuse::{
     dir::{FillDir, ReadDirFlags},
-    Config, ConnInfo, FileInfo, Fuse, Operations,
+    Config, ConnInfo, FileInfo, Fuse, Operations, Result,
 };
 use nix::errno::errno;
 use std::{
@@ -89,30 +89,31 @@ impl Operations for Filesystem {
         log::trace!("destroy()");
     }
 
-    fn getattr(&self, path: &CStr, stbuf: &mut stat, _fi: Option<&mut FileInfo>) -> c_int {
+    fn getattr(&self, path: &CStr, stbuf: &mut stat, _fi: Option<&mut FileInfo>) -> Result<()> {
         let path = self.resolve_path(path);
         log::trace!("getattr(path={:?})", path);
 
         let res = unsafe { libc::lstat(path.as_ptr(), stbuf) };
         if res == -1 {
-            return -errno();
+            return Err(errno());
         }
 
-        0
+        Ok(())
     }
 
-    fn access(&self, path: &CStr, mask: c_int) -> c_int {
+    fn access(&self, path: &CStr, mask: c_int) -> Result<()> {
         let path = self.resolve_path(path);
         log::trace!("access(path={:?})", path);
 
         let res = unsafe { libc::access(path.as_ptr(), mask) };
         if res == -1 {
-            return -errno();
+            return Err(errno());
         }
-        0
+
+        Ok(())
     }
 
-    fn readlink(&self, path: &CStr, buf: &mut [u8]) -> c_int {
+    fn readlink(&self, path: &CStr, buf: &mut [u8]) -> Result<()> {
         let path = self.resolve_path(path);
         log::trace!("readlink(path={:?})", path);
 
@@ -124,11 +125,11 @@ impl Operations for Filesystem {
             )
         };
         if res == -1 {
-            return -errno();
+            return Err(errno());
         }
         buf[res as usize] = 0;
 
-        0
+        Ok(())
     }
 
     fn readdir(
@@ -138,22 +139,26 @@ impl Operations for Filesystem {
         _offset: off_t,
         _fi: Option<&mut FileInfo>,
         _flags: ReadDirFlags,
-    ) -> c_int {
+    ) -> Result<()> {
         let path = self.resolve_path(path);
         log::trace!("readdir(path={:?})", path);
 
-        let dp = unsafe { libc::opendir(path.as_ptr()) };
-        if dp == ptr::null_mut() {
-            return -errno();
-        }
-        let dp = unsafe { &mut *dp };
+        let dp = unsafe {
+            let dp = libc::opendir(path.as_ptr());
+            if dp == ptr::null_mut() {
+                return Err(errno());
+            }
+            &mut *dp
+        };
 
         loop {
-            let de = unsafe { libc::readdir(dp) };
-            if de == ptr::null_mut() {
-                break;
-            }
-            let de = unsafe { &mut *de };
+            let de = unsafe {
+                let de = libc::readdir(dp);
+                if de == ptr::null_mut() {
+                    break;
+                }
+                &mut *de
+            };
 
             let mut st: libc::stat = unsafe { mem::zeroed() };
             st.st_ino = de.d_ino;
@@ -167,65 +172,70 @@ impl Operations for Filesystem {
         }
 
         unsafe { libc::closedir(dp) };
-        0
+
+        Ok(())
     }
 
-    fn mknod(&self, path: &CStr, mode: mode_t, rdev: dev_t) -> c_int {
+    fn mknod(&self, path: &CStr, mode: mode_t, rdev: dev_t) -> Result<()> {
         let path = self.resolve_path(path);
         log::trace!("mknod(path={:?}, mode={}, rdev={})", path, mode, rdev);
 
         let res = unsafe { mknod_wrapper(libc::AT_FDCWD, &path, None, mode, rdev) };
         if res == -1 {
-            return -errno();
+            return Err(errno());
         }
-        0
+        Ok(())
     }
 
-    fn mkdir(&self, path: &CStr, mode: mode_t) -> c_int {
+    fn mkdir(&self, path: &CStr, mode: mode_t) -> Result<()> {
         let path = self.resolve_path(path);
         log::trace!("mkdir(path={:?}, mode={})", path, mode);
 
         let res = unsafe { libc::mkdir(path.as_ptr(), mode) };
         if res == -1 {
-            return -errno();
+            return Err(errno());
         }
-        0
+
+        Ok(())
     }
 
-    fn unlink(&self, path: &CStr) -> c_int {
+    fn unlink(&self, path: &CStr) -> Result<()> {
         let path = self.resolve_path(path);
         log::trace!("unlink(path={:?})", path);
 
         let res = unsafe { libc::unlink(path.as_ptr()) };
         if res == -1 {
-            return -errno();
+            return Err(errno());
         }
-        0
+
+        Ok(())
     }
 
-    fn rmdir(&self, path: &CStr) -> c_int {
+    fn rmdir(&self, path: &CStr) -> Result<()> {
         let path = self.resolve_path(path);
         log::trace!("open(path={:?})", path);
 
         let res = unsafe { libc::rmdir(path.as_ptr()) };
         if res == -1 {
-            return -errno();
+            return Err(errno());
         }
-        0
+
+        Ok(())
     }
 
-    fn symlink(&self, path_from: &CStr, path_to: &CStr) -> c_int {
+    fn symlink(&self, path_from: &CStr, path_to: &CStr) -> Result<()> {
         let path_to = self.resolve_path(path_to);
         log::trace!("symlink(from={:?}, to={:?})", path_from, path_to);
 
         let res = unsafe { libc::symlink(path_from.as_ptr(), path_to.as_ptr()) };
         if res == -1 {
-            return -errno();
+            return Err(errno());
         }
-        0
+
+        Ok(())
     }
 
-    fn rename(&self, path_from: &CStr, path_to: &CStr, flags: c_uint) -> c_int {
+    fn rename(&self, path_from: &CStr, path_to: &CStr, flags: c_uint) -> Result<()> {
         let path_to = self.resolve_path(path_to);
         log::trace!(
             "rename(from={:?}, to={:?}, flags={})",
@@ -235,53 +245,54 @@ impl Operations for Filesystem {
         );
 
         if flags != 0 {
-            return -libc::EINVAL;
+            return Err(libc::EINVAL);
         }
 
         let res = unsafe { libc::rename(path_from.as_ptr(), path_to.as_ptr()) };
         if res == -1 {
-            return -errno();
+            return Err(errno());
         }
-        0
+
+        Ok(())
     }
 
-    fn link(&self, path_from: &CStr, path_to: &CStr) -> c_int {
+    fn link(&self, path_from: &CStr, path_to: &CStr) -> Result<()> {
         let path_to = self.resolve_path(path_to);
         log::trace!("link(from={:?}, to={:?})", path_from, path_to);
 
         let res = unsafe { libc::link(path_from.as_ptr(), path_to.as_ptr()) };
         if res == -1 {
-            return -errno();
+            return Err(errno());
         }
 
-        0
+        Ok(())
     }
 
-    fn chmod(&self, path: &CStr, mode: mode_t, _fi: Option<&mut FileInfo>) -> c_int {
+    fn chmod(&self, path: &CStr, mode: mode_t, _fi: Option<&mut FileInfo>) -> Result<()> {
         let path = self.resolve_path(path);
         log::trace!("chmod(path={:?}, mode={})", path, mode);
 
         let res = unsafe { libc::chmod(path.as_ptr(), mode) };
         if res == -1 {
-            return -errno();
+            return Err(errno());
         }
 
-        0
+        Ok(())
     }
 
-    fn chown(&self, path: &CStr, uid: uid_t, gid: gid_t, _fi: Option<&mut FileInfo>) -> c_int {
+    fn chown(&self, path: &CStr, uid: uid_t, gid: gid_t, _fi: Option<&mut FileInfo>) -> Result<()> {
         let path = self.resolve_path(path);
         log::trace!("chown(path={:?}, uid={}, gid={})", path, uid, gid);
 
         let res = unsafe { libc::lchown(path.as_ptr(), uid, gid) };
         if res == -1 {
-            return -errno();
+            return Err(errno());
         }
 
-        0
+        Ok(())
     }
 
-    fn truncate(&self, path: &CStr, size: off_t, fi: Option<&mut FileInfo>) -> c_int {
+    fn truncate(&self, path: &CStr, size: off_t, fi: Option<&mut FileInfo>) -> Result<()> {
         let path = self.resolve_path(path);
         log::trace!("truncate(path={:?}, size={})", path, size);
 
@@ -290,41 +301,48 @@ impl Operations for Filesystem {
         } else {
             unsafe { libc::truncate(path.as_ptr(), size) }
         };
-
         if res == -1 {
-            return -errno();
+            return Err(errno());
         }
 
-        0
+        Ok(())
     }
 
-    fn create(&self, path: &CStr, mode: mode_t, fi: &mut FileInfo) -> c_int {
+    fn create(&self, path: &CStr, mode: mode_t, fi: &mut FileInfo) -> Result<()> {
         let path = self.resolve_path(path);
         log::trace!("create(path={:?}, mode={})", path, mode);
 
         let res = unsafe { libc::open(path.as_ptr(), fi.flags(), mode) };
         if res == -1 {
-            return -errno();
+            return Err(errno());
         }
 
         *fi.fh_mut() = res as u64;
-        0
+
+        Ok(())
     }
 
-    fn open(&self, path: &CStr, fi: &mut FileInfo) -> c_int {
+    fn open(&self, path: &CStr, fi: &mut FileInfo) -> Result<()> {
         let path = self.resolve_path(path);
         log::trace!("open(path={:?})", path);
 
         let res = unsafe { libc::open(path.as_ptr(), fi.flags()) };
         if res == -1 {
-            return nix::errno::errno() * -1;
+            return Err(errno());
         }
+
         *fi.fh_mut() = res as u64;
 
-        0
+        Ok(())
     }
 
-    fn read(&self, path: &CStr, buf: &mut [u8], offset: off_t, fi: Option<&mut FileInfo>) -> c_int {
+    fn read(
+        &self,
+        path: &CStr,
+        buf: &mut [u8],
+        offset: off_t,
+        fi: Option<&mut FileInfo>,
+    ) -> Result<()> {
         let path = self.resolve_path(path);
         log::trace!("read(path={:?})", path);
 
@@ -333,7 +351,7 @@ impl Operations for Filesystem {
         } else {
             let fd = unsafe { libc::open(path.as_ptr(), libc::O_RDONLY) };
             if fd == -1 {
-                return -errno();
+                return Err(errno());
             }
             Fd::Temp(fd)
         };
@@ -347,12 +365,19 @@ impl Operations for Filesystem {
             ) as c_int
         };
         if res == -1 {
-            return -errno();
+            return Err(errno());
         }
-        res
+
+        Ok(())
     }
 
-    fn write(&self, path: &CStr, buf: &[u8], offset: off_t, fi: Option<&mut FileInfo>) -> c_int {
+    fn write(
+        &self,
+        path: &CStr,
+        buf: &[u8],
+        offset: off_t,
+        fi: Option<&mut FileInfo>,
+    ) -> Result<()> {
         let path = self.resolve_path(path);
         log::trace!("write(path={:?})", path);
 
@@ -361,7 +386,7 @@ impl Operations for Filesystem {
         } else {
             let fd = unsafe { libc::open(path.as_ptr(), libc::O_WRONLY) };
             if fd == -1 {
-                return -errno();
+                return Err(errno());
             }
             Fd::Temp(fd)
         };
@@ -375,35 +400,39 @@ impl Operations for Filesystem {
             ) as c_int
         };
         if res == -1 {
-            return -errno();
+            return Err(errno());
         }
-        res
+
+        Ok(())
     }
 
-    fn statfs(&self, path: &CStr, stbuf: &mut statvfs) -> c_int {
+    fn statfs(&self, path: &CStr, stbuf: &mut statvfs) -> Result<()> {
         let path = self.resolve_path(path);
         log::trace!("statfs(path={:?})", path);
 
         let res = unsafe { libc::statvfs(path.as_ptr(), stbuf) };
         if res == -1 {
-            return -errno();
+            return Err(errno());
         }
-        0
+
+        Ok(())
     }
 
-    fn release(&self, path: &CStr, fi: &mut FileInfo) -> c_int {
+    fn release(&self, path: &CStr, fi: &mut FileInfo) -> Result<()> {
         let path = self.resolve_path(path);
         log::trace!("release(path={:?})", path);
+
         if fi.fh() != 0 {
             unsafe {
                 libc::close(fi.fh() as i32);
             }
             *fi.fh_mut() = 0;
         }
-        0
+
+        Ok(())
     }
 
-    fn utimens(&self, path: &CStr, ts: &[timespec; 2], fi: Option<&mut FileInfo>) -> c_int {
+    fn utimens(&self, path: &CStr, ts: &[timespec; 2], fi: Option<&mut FileInfo>) -> Result<()> {
         let path = self.resolve_path(path);
         log::trace!("utimens(path={:?})", path);
 
@@ -413,15 +442,16 @@ impl Operations for Filesystem {
             unsafe { libc::utimensat(0, path.as_ptr(), ts.as_ptr(), libc::AT_SYMLINK_NOFOLLOW) }
         };
         if res == -1 {
-            return -errno();
+            return Err(errno());
         }
-        0
+
+        Ok(())
     }
 
-    fn fsync(&self, _path: &CStr, _isdatasync: c_int, _fi: Option<&mut FileInfo>) -> c_int {
+    fn fsync(&self, _path: &CStr, _isdatasync: c_int, _fi: Option<&mut FileInfo>) -> Result<()> {
         // Just a stub.
         // This method is optional and can safely be left unimplemented.
-        0
+        Ok(())
     }
 
     fn fallocate(
@@ -431,7 +461,7 @@ impl Operations for Filesystem {
         offset: off_t,
         length: off_t,
         fi: Option<&mut FileInfo>,
-    ) -> c_int {
+    ) -> Result<()> {
         let path = self.resolve_path(path);
         log::trace!(
             "fallocate(path={:?}, mode={}, offset={}, length={})",
@@ -442,7 +472,7 @@ impl Operations for Filesystem {
         );
 
         if mode != 0 {
-            return -libc::EOPNOTSUPP;
+            return Err(libc::EOPNOTSUPP);
         }
 
         let fd = if let Some(fi) = fi {
@@ -450,15 +480,21 @@ impl Operations for Filesystem {
         } else {
             let fd = unsafe { libc::open(path.as_ptr(), libc::O_WRONLY) };
             if fd == -1 {
-                return -errno();
+                return Err(errno());
             }
             Fd::Temp(fd)
         };
 
-        unsafe { -libc::posix_fallocate(fd.as_raw_fd(), offset, length) }
+        let res = unsafe { libc::posix_fallocate(fd.as_raw_fd(), offset, length) };
+        if res != 0 {
+            // posix_allocate does not set errno.
+            return Err(-res);
+        }
+
+        Ok(())
     }
 
-    fn setxattr(&self, path: &CStr, name: &CStr, value: &[u8], flags: c_int) -> c_int {
+    fn setxattr(&self, path: &CStr, name: &CStr, value: &[u8], flags: c_int) -> Result<()> {
         let path = self.resolve_path(path);
         log::trace!(
             "setxattr(path={:?}, name={:?}, value=[..;{}], flags={})",
@@ -478,12 +514,13 @@ impl Operations for Filesystem {
             )
         };
         if res == -1 {
-            return -errno();
+            return Err(errno());
         }
-        0
+
+        Ok(())
     }
 
-    fn getxattr(&self, path: &CStr, name: &CStr, value: &mut [u8]) -> c_int {
+    fn getxattr(&self, path: &CStr, name: &CStr, value: &mut [u8]) -> Result<()> {
         let path = self.resolve_path(path);
         log::trace!("getxattr(path={:?}, name={:?})", path, name);
 
@@ -496,12 +533,13 @@ impl Operations for Filesystem {
             )
         };
         if res == -1 {
-            return -errno();
+            return Err(errno());
         }
-        0
+
+        Ok(())
     }
 
-    fn listxattr(&self, path: &CStr, list: &mut [u8]) -> c_int {
+    fn listxattr(&self, path: &CStr, list: &mut [u8]) -> Result<()> {
         let path = self.resolve_path(path);
         log::trace!("listxattr(path={:?})", path,);
 
@@ -509,20 +547,22 @@ impl Operations for Filesystem {
             libc::llistxattr(path.as_ptr(), list.as_mut_ptr() as *mut c_char, list.len())
         };
         if res == -1 {
-            return -errno();
+            return Err(errno());
         }
-        0
+
+        Ok(())
     }
 
-    fn removexattr(&self, path: &CStr, name: &CStr) -> c_int {
+    fn removexattr(&self, path: &CStr, name: &CStr) -> Result<()> {
         let path = self.resolve_path(path);
         log::trace!("removexattr(path={:?}, name={:?})", path, name);
 
         let res = unsafe { libc::lremovexattr(path.as_ptr(), name.as_ptr()) };
         if res == -1 {
-            return -errno();
+            return Err(errno());
         }
-        0
+
+        Ok(())
     }
 
     fn copy_file_range(
@@ -535,7 +575,7 @@ impl Operations for Filesystem {
         offset_out: off_t,
         len: usize,
         flags: c_int,
-    ) -> isize {
+    ) -> Result<isize> {
         let path_in = self.resolve_path(path_in);
         let path_out = self.resolve_path(path_out);
         log::trace!("copy_file_range(path_in={:?}, offset_in={}, path_out={:?}, offset_out={}, len={}, flags={})", path_in, offset_in, path_out, offset_out, len, flags);
@@ -545,7 +585,7 @@ impl Operations for Filesystem {
         } else {
             let fd = unsafe { libc::open(path_in.as_ptr(), libc::O_RDONLY) };
             if fd == -1 {
-                return -errno() as isize;
+                return Err(errno());
             }
             Fd::Temp(fd)
         };
@@ -555,7 +595,7 @@ impl Operations for Filesystem {
         } else {
             let fd = unsafe { libc::open(path_out.as_ptr(), libc::O_WRONLY) };
             if fd == -1 {
-                return -errno() as isize;
+                return Err(errno());
             }
             Fd::Temp(fd)
         };
@@ -572,10 +612,10 @@ impl Operations for Filesystem {
             )
         };
         if res == -1 {
-            return -errno() as isize;
+            return Err(errno());
         }
 
-        res as isize
+        Ok(res as isize)
     }
 }
 
