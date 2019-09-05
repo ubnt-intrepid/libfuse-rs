@@ -1,6 +1,7 @@
 use libc::{c_char, c_int, off_t, stat};
 use libfuse_sys::*;
 use std::{
+    env,
     ffi::{CStr, CString},
     mem, ptr,
 };
@@ -9,106 +10,59 @@ const hello_str: &str = "Hello World!\n";
 const hello_name: &str = "hello";
 
 fn main() {
-    std::process::exit({
-        let args: Vec<CString> = std::env::args()
-            .map(CString::new)
-            .collect::<Result<_, _>>()
-            .unwrap();
-        let c_args: Vec<*const c_char> = args.iter().map(|s| s.as_ptr()).collect();
-        unsafe { c_main(c_args.len() as c_int, c_args.as_ptr()) }
-    })
-}
+    let mountpoint = env::args()
+        .nth(1)
+        .and_then(|s| CString::new(s).ok())
+        .expect("requires the mountpoint path");
 
-unsafe fn c_main(argc: c_int, argv: *const *const c_char) -> c_int {
-    let mut ops = mem::zeroed::<fuse_lowlevel_ops>();
-    ops.getattr = Some(hello_ll_getattr);
-    ops.lookup = Some(hello_ll_lookup);
-    ops.readdir = Some(hello_ll_readdir);
-    ops.open = Some(hello_ll_open);
-    ops.read = Some(hello_ll_read);
+    let args: Vec<_> = vec!["hello", "-d"]
+        .into_iter()
+        .map(CString::new)
+        .collect::<Result<_, _>>()
+        .unwrap();
+    let c_args: Vec<*const c_char> = args.iter().map(|arg| arg.as_ptr()).collect();
 
-    let mut args = fuse_args {
-        argc: argc,
-        argv: argv as *mut *mut c_char,
-        allocated: 0,
-    };
+    unsafe {
+        let mut ops = mem::zeroed::<fuse_lowlevel_ops>();
+        ops.getattr = Some(hello_ll_getattr);
+        ops.lookup = Some(hello_ll_lookup);
+        ops.readdir = Some(hello_ll_readdir);
+        ops.open = Some(hello_ll_open);
+        ops.read = Some(hello_ll_read);
 
-    let mut opts = mem::zeroed::<fuse_cmdline_opts>();
+        let mut args = fuse_args {
+            argc: c_args.len() as c_int,
+            argv: c_args.as_ptr() as *mut *mut c_char,
+            allocated: 0,
+        };
 
-    if fuse_parse_cmdline(&mut args, &mut opts) != 0 {
-        return 1;
-    }
+        let se = fuse_session_new(&mut args, &ops, mem::size_of_val(&ops), ptr::null_mut());
+        if se.is_null() {
+            fuse_opt_free_args(&mut args);
+            return;
+        }
 
-    if opts.show_help != 0 {
-        let fsname = CStr::from_ptr(*argv.offset(0));
-        println!("usage: {:?} [options] <mountpoint>", fsname);
-        println!();
-        fuse_cmdline_help();
-        fuse_lowlevel_help();
-        libc::free(opts.mountpoint as *mut _);
-        fuse_opt_free_args(&mut args);
-        return 0;
-    }
+        if fuse_set_signal_handlers(se) != 0 {
+            fuse_session_destroy(se);
+            fuse_opt_free_args(&mut args);
+            return;
+        }
 
-    if opts.show_version != 0 {
-        let pkgversion = CStr::from_ptr(fuse_pkgversion());
-        println!("FUSE library version {:?}", pkgversion,);
-        fuse_lowlevel_version();
-        libc::free(opts.mountpoint as *mut _);
-        fuse_opt_free_args(&mut args);
-        return 0;
-    }
+        if fuse_session_mount(se, mountpoint.as_ptr()) != 0 {
+            fuse_remove_signal_handlers(se);
+            fuse_session_destroy(se);
+            fuse_opt_free_args(&mut args);
+            return;
+        }
 
-    if opts.mountpoint.is_null() {
-        let fsname = CStr::from_ptr(*argv.offset(0));
-        println!("usage: {:?} [options] <mountpoint>", fsname);
-        println!("       {:?} --help\n", fsname);
-        libc::free(opts.mountpoint as *mut _);
-        fuse_opt_free_args(&mut args);
-        return 1;
-    }
+        // Block until ctrl+c or fusermount -u
+        fuse_session_loop(se);
+        // fuse_session_loop_mt_31(se, opts.clone_fd);
 
-    let se = fuse_session_new(&mut args, &ops, mem::size_of_val(&ops), ptr::null_mut());
-    if se.is_null() {
-        libc::free(opts.mountpoint as *mut _);
-        fuse_opt_free_args(&mut args);
-        return 1;
-    }
-
-    if fuse_set_signal_handlers(se) != 0 {
-        fuse_session_destroy(se);
-        libc::free(opts.mountpoint as *mut _);
-        fuse_opt_free_args(&mut args);
-        return 1;
-    }
-
-    if fuse_session_mount(se, opts.mountpoint) != 0 {
+        fuse_session_unmount(se);
         fuse_remove_signal_handlers(se);
         fuse_session_destroy(se);
-        libc::free(opts.mountpoint as *mut _);
         fuse_opt_free_args(&mut args);
-        return 1;
-    }
-
-    fuse_daemonize(opts.foreground);
-
-    // Block until ctrl+c or fusermount -u
-    let ret = if opts.singlethread != 0 {
-        fuse_session_loop(se)
-    } else {
-        fuse_session_loop_mt_31(se, opts.clone_fd)
-    };
-
-    fuse_session_unmount(se);
-    fuse_remove_signal_handlers(se);
-    fuse_session_destroy(se);
-    libc::free(opts.mountpoint as *mut _);
-    fuse_opt_free_args(&mut args);
-
-    if ret != 0 {
-        1
-    } else {
-        0
     }
 }
 
@@ -234,8 +188,6 @@ unsafe extern "C" fn hello_ll_readdir(
 
     debug_assert!(off >= 0);
     reply_buf_limited(req, b.p, b.size, off, size);
-
-    fuse_reply_err(req, libc::ENOSYS);
 }
 
 unsafe extern "C" fn hello_ll_open(req: fuse_req_t, ino: fuse_ino_t, fi: *mut fuse_file_info) {

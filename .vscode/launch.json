@@ -5,11 +5,11 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "example-passthrough",
+            "name": "example-hello-lowlevel",
             "type": "gdb",
             "request": "launch",
-            "target": "./target/debug/examples/passthrough",
-            "arguments": "-f -s /tmp/mountpoint",
+            "target": "./target/debug/examples/hello_lowlevel",
+            "arguments": "/tmp/mountpoint",
             "cwd": "${workspaceRoot}",
             "valuesFormatting": "parseText"
         }
