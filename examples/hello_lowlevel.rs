@@ -1,24 +1,10 @@
-use libc::{c_char, c_int, off_t, stat};
-use libfuse::lowlevel::{Operations, Session};
+use libc::{c_int, off_t, stat};
+use libfuse::lowlevel::{Ino, OperationResult, Operations, Session};
 use libfuse_sys::{
-    fuse_add_direntry, //
-    fuse_entry_param,
+    fuse_entry_param, //
     fuse_file_info,
-    fuse_ino_t,
-    fuse_reply_attr,
-    fuse_reply_buf,
-    fuse_reply_entry,
-    fuse_reply_err,
-    fuse_reply_open,
-    fuse_req,
 };
-use std::{
-    env,
-    ffi::{CStr, CString},
-    mem,
-    path::PathBuf,
-    ptr,
-};
+use std::{env, ffi::CStr, mem, path::PathBuf};
 
 const HELLO_STR: &str = "Hello World!\n";
 const HELLO_NAME: &str = "hello";
@@ -43,104 +29,82 @@ fn main() {
 struct Hello;
 
 impl Operations for Hello {
-    unsafe fn getattr(&mut self, req: &mut fuse_req, ino: fuse_ino_t, _: *mut fuse_file_info) {
-        let mut stbuf = mem::zeroed::<stat>();
-        match hello_stat(ino, &mut stbuf) {
-            Ok(()) => {
-                fuse_reply_attr(req, &stbuf, 1.0);
-            }
-            Err(_) => {
-                fuse_reply_err(req, libc::ENOENT);
-            }
-        }
-    }
-
-    unsafe fn lookup(&mut self, req: &mut fuse_req, parent: fuse_ino_t, name: *const c_char) {
-        let name = CStr::from_ptr(name);
-
+    fn lookup(&mut self, parent: Ino, name: &CStr) -> OperationResult<fuse_entry_param> {
         if parent != 1 {
-            fuse_reply_err(req, libc::ENOENT);
-            return;
+            return Err(libc::ENOENT);
         }
 
         match name.to_str() {
-            Ok(s) if s == HELLO_NAME => (),
-            _ => {
-                fuse_reply_err(req, libc::ENOENT);
-                return;
-            }
+            Ok(HELLO_NAME) => (),
+            _ => return Err(libc::ENOENT),
         }
 
-        let mut e = mem::zeroed::<fuse_entry_param>();
+        let mut e = unsafe { mem::zeroed::<fuse_entry_param>() };
         e.ino = 2;
         e.attr_timeout = 1.0;
         e.entry_timeout = 1.0;
         let _ = hello_stat(e.ino, &mut e.attr);
-
-        fuse_reply_entry(req, &e);
+        Ok(e)
     }
 
-    unsafe fn readdir(
+    fn getattr(&mut self, ino: Ino, _: *mut fuse_file_info) -> OperationResult<(stat, f64)> {
+        let mut stbuf = unsafe { mem::zeroed::<stat>() };
+        match hello_stat(ino, &mut stbuf) {
+            Ok(()) => Ok((stbuf, 1.0)),
+            Err(_) => Err(libc::ENOENT),
+        }
+    }
+
+    fn open(&mut self, ino: Ino, fi: &mut fuse_file_info) -> OperationResult<()> {
+        match (ino, fi.flags & libc::O_ACCMODE) {
+            (2, libc::O_RDONLY) => Ok(()),
+            (2, _) => Err(libc::EACCES),
+            _ => Err(libc::EISDIR),
+        }
+    }
+
+    fn read(
         &mut self,
-        req: &mut fuse_req,
-        ino: fuse_ino_t,
-        size: usize,
+        ino: Ino,
+        buf: &mut [u8],
         off: off_t,
         _: *mut fuse_file_info,
-    ) {
-        if ino != 1 {
-            fuse_reply_err(req, libc::ENOTDIR);
-            return;
-        }
-
-        let mut b = DirBuf {
-            p: ptr::null_mut(),
-            size: 0,
-        };
-        b.add(req, ".", 1);
-        b.add(req, "..", 1);
-        b.add(req, HELLO_NAME, 2);
-
-        debug_assert!(off >= 0);
-        reply_buf_limited(req, b.p, b.size, off, size);
-    }
-
-    unsafe fn open(&mut self, req: &mut fuse_req, ino: fuse_ino_t, fi: *mut fuse_file_info) {
-        debug_assert!(!fi.is_null());
-        let fi = &mut *fi;
-
-        if ino != 2 {
-            fuse_reply_err(req, libc::EISDIR);
-            return;
-        }
-
-        match fi.flags & libc::O_ACCMODE {
-            libc::O_RDONLY => {
-                fuse_reply_open(req, fi);
-            }
-            _ => {
-                fuse_reply_err(req, libc::EACCES);
-            }
-        }
-    }
-
-    unsafe fn read(
-        &mut self,
-        req: &mut fuse_req,
-        ino: fuse_ino_t,
-        size: usize,
-        off: off_t,
-        _: *mut fuse_file_info,
-    ) {
+    ) -> OperationResult<usize> {
         debug_assert!(ino == 2);
         debug_assert!(off >= 0);
+        let off = off as usize;
 
-        let hello_cstr = CString::new(HELLO_STR).unwrap();
-        reply_buf_limited(req, hello_cstr.as_ptr(), HELLO_STR.len(), off, size);
+        if off > HELLO_STR.len() {
+            return Ok(0);
+        }
+
+        let to_be_read = std::cmp::min(buf.len(), HELLO_STR.len() - off);
+
+        let src = HELLO_STR[off..off + to_be_read].as_bytes();
+        buf[..to_be_read].copy_from_slice(src);
+
+        Ok(src.len())
+    }
+
+    fn readdir(
+        &mut self,
+        ino: Ino,
+        buf: &mut libfuse::lowlevel::DirBuf<'_>,
+        _: *mut fuse_file_info,
+    ) -> OperationResult<()> {
+        if ino != 1 {
+            return Err(libc::ENOTDIR);
+        }
+
+        buf.add(".", 1);
+        buf.add("..", 1);
+        buf.add(HELLO_NAME, 2);
+
+        Ok(())
     }
 }
 
-unsafe fn hello_stat(ino: fuse_ino_t, stbuf: &mut stat) -> Result<(), c_int> {
+fn hello_stat(ino: Ino, stbuf: &mut stat) -> Result<(), c_int> {
     stbuf.st_ino = ino;
     match ino {
         1 => {
@@ -155,60 +119,4 @@ unsafe fn hello_stat(ino: fuse_ino_t, stbuf: &mut stat) -> Result<(), c_int> {
         _ => return Err(libc::ENOENT),
     }
     Ok(())
-}
-
-unsafe fn reply_buf_limited(
-    req: &mut fuse_req,
-    buf: *const c_char,
-    bufsize: usize,
-    off: off_t,
-    maxsize: usize,
-) -> c_int {
-    if (off as usize) < bufsize {
-        fuse_reply_buf(
-            req,
-            buf.offset(off as isize),
-            std::cmp::min(bufsize - off as usize, maxsize),
-        )
-    } else {
-        fuse_reply_buf(req, ptr::null(), 0)
-    }
-}
-
-struct DirBuf {
-    p: *mut c_char,
-    size: usize,
-}
-
-impl Drop for DirBuf {
-    fn drop(&mut self) {
-        unsafe {
-            if !self.p.is_null() {
-                libc::free(self.p as *mut _);
-            }
-            self.p = ptr::null_mut();
-        }
-    }
-}
-
-impl DirBuf {
-    unsafe fn add(&mut self, req: &mut fuse_req, name: &str, ino: fuse_ino_t) {
-        let name = CString::new(name).unwrap();
-
-        let oldsize = self.size;
-        self.size += fuse_add_direntry(req, ptr::null_mut(), 0, name.as_ptr(), ptr::null(), 0);
-        self.p = libc::realloc(self.p as *mut _, self.size) as *mut c_char;
-
-        let mut stbuf = mem::zeroed::<stat>();
-        stbuf.st_ino = ino;
-
-        fuse_add_direntry(
-            req,
-            self.p.offset(oldsize as isize),
-            self.size - oldsize,
-            name.as_ptr(),
-            &stbuf,
-            self.size as i64,
-        );
-    }
 }
