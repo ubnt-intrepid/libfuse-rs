@@ -1,7 +1,9 @@
 //! A wrapper for libfuse.
 
-mod common;
 pub mod dir;
+pub mod lowlevel;
+
+mod common;
 mod fuse;
 mod ops;
 
