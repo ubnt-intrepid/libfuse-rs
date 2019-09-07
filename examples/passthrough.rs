@@ -3,7 +3,7 @@ use libc::{
 };
 use libfuse::{
     dir::{FillDir, ReadDirFlags},
-    Config, ConnInfo, FileInfo, Fuse, Operations, Result,
+    Config, ConnInfo, FileInfo, Fuse, OperationResult, Operations,
 };
 use nix::errno::errno;
 use std::{
@@ -85,7 +85,7 @@ impl Operations for Filesystem {
         cfg.negative_timeout(0.0);
     }
 
-    fn getattr(&self, path: &CStr, _: Option<&mut FileInfo>) -> Result<stat> {
+    fn getattr(&self, path: &CStr, _: Option<&mut FileInfo>) -> OperationResult<stat> {
         let path = self.resolve_path(path);
         log::trace!("getattr(path={:?})", path);
 
@@ -98,7 +98,7 @@ impl Operations for Filesystem {
         Ok(stat)
     }
 
-    fn access(&self, path: &CStr, mask: c_int) -> Result<()> {
+    fn access(&self, path: &CStr, mask: c_int) -> OperationResult<()> {
         let path = self.resolve_path(path);
         log::trace!("access(path={:?})", path);
 
@@ -110,7 +110,7 @@ impl Operations for Filesystem {
         Ok(())
     }
 
-    fn readlink(&self, path: &CStr, buf: &mut [u8]) -> Result<()> {
+    fn readlink(&self, path: &CStr, buf: &mut [u8]) -> OperationResult<()> {
         let path = self.resolve_path(path);
         log::trace!("readlink(path={:?})", path);
 
@@ -136,7 +136,7 @@ impl Operations for Filesystem {
         _offset: off_t,
         _fi: Option<&mut FileInfo>,
         _flags: ReadDirFlags,
-    ) -> Result<()> {
+    ) -> OperationResult<()> {
         let path = self.resolve_path(path);
         log::trace!("readdir(path={:?})", path);
 
@@ -173,7 +173,7 @@ impl Operations for Filesystem {
         Ok(())
     }
 
-    fn mknod(&self, path: &CStr, mode: mode_t, rdev: dev_t) -> Result<()> {
+    fn mknod(&self, path: &CStr, mode: mode_t, rdev: dev_t) -> OperationResult<()> {
         let path = self.resolve_path(path);
         log::trace!("mknod(path={:?}, mode={}, rdev={})", path, mode, rdev);
 
@@ -184,7 +184,7 @@ impl Operations for Filesystem {
         Ok(())
     }
 
-    fn mkdir(&self, path: &CStr, mode: mode_t) -> Result<()> {
+    fn mkdir(&self, path: &CStr, mode: mode_t) -> OperationResult<()> {
         let path = self.resolve_path(path);
         log::trace!("mkdir(path={:?}, mode={})", path, mode);
 
@@ -196,7 +196,7 @@ impl Operations for Filesystem {
         Ok(())
     }
 
-    fn unlink(&self, path: &CStr) -> Result<()> {
+    fn unlink(&self, path: &CStr) -> OperationResult<()> {
         let path = self.resolve_path(path);
         log::trace!("unlink(path={:?})", path);
 
@@ -208,7 +208,7 @@ impl Operations for Filesystem {
         Ok(())
     }
 
-    fn rmdir(&self, path: &CStr) -> Result<()> {
+    fn rmdir(&self, path: &CStr) -> OperationResult<()> {
         let path = self.resolve_path(path);
         log::trace!("open(path={:?})", path);
 
@@ -220,7 +220,7 @@ impl Operations for Filesystem {
         Ok(())
     }
 
-    fn symlink(&self, path_from: &CStr, path_to: &CStr) -> Result<()> {
+    fn symlink(&self, path_from: &CStr, path_to: &CStr) -> OperationResult<()> {
         let path_to = self.resolve_path(path_to);
         log::trace!("symlink(from={:?}, to={:?})", path_from, path_to);
 
@@ -232,7 +232,7 @@ impl Operations for Filesystem {
         Ok(())
     }
 
-    fn rename(&self, path_from: &CStr, path_to: &CStr, flags: c_uint) -> Result<()> {
+    fn rename(&self, path_from: &CStr, path_to: &CStr, flags: c_uint) -> OperationResult<()> {
         let path_to = self.resolve_path(path_to);
         log::trace!(
             "rename(from={:?}, to={:?}, flags={})",
@@ -253,7 +253,7 @@ impl Operations for Filesystem {
         Ok(())
     }
 
-    fn link(&self, path_from: &CStr, path_to: &CStr) -> Result<()> {
+    fn link(&self, path_from: &CStr, path_to: &CStr) -> OperationResult<()> {
         let path_to = self.resolve_path(path_to);
         log::trace!("link(from={:?}, to={:?})", path_from, path_to);
 
@@ -265,7 +265,7 @@ impl Operations for Filesystem {
         Ok(())
     }
 
-    fn chmod(&self, path: &CStr, mode: mode_t, _fi: Option<&mut FileInfo>) -> Result<()> {
+    fn chmod(&self, path: &CStr, mode: mode_t, _fi: Option<&mut FileInfo>) -> OperationResult<()> {
         let path = self.resolve_path(path);
         log::trace!("chmod(path={:?}, mode={})", path, mode);
 
@@ -277,7 +277,13 @@ impl Operations for Filesystem {
         Ok(())
     }
 
-    fn chown(&self, path: &CStr, uid: uid_t, gid: gid_t, _fi: Option<&mut FileInfo>) -> Result<()> {
+    fn chown(
+        &self,
+        path: &CStr,
+        uid: uid_t,
+        gid: gid_t,
+        _fi: Option<&mut FileInfo>,
+    ) -> OperationResult<()> {
         let path = self.resolve_path(path);
         log::trace!("chown(path={:?}, uid={}, gid={})", path, uid, gid);
 
@@ -289,7 +295,7 @@ impl Operations for Filesystem {
         Ok(())
     }
 
-    fn truncate(&self, path: &CStr, size: off_t, fi: Option<&mut FileInfo>) -> Result<()> {
+    fn truncate(&self, path: &CStr, size: off_t, fi: Option<&mut FileInfo>) -> OperationResult<()> {
         let path = self.resolve_path(path);
         log::trace!("truncate(path={:?}, size={})", path, size);
 
@@ -305,7 +311,7 @@ impl Operations for Filesystem {
         Ok(())
     }
 
-    fn create(&self, path: &CStr, mode: mode_t, fi: &mut FileInfo) -> Result<()> {
+    fn create(&self, path: &CStr, mode: mode_t, fi: &mut FileInfo) -> OperationResult<()> {
         let path = self.resolve_path(path);
         log::trace!("create(path={:?}, mode={})", path, mode);
 
@@ -319,7 +325,7 @@ impl Operations for Filesystem {
         Ok(())
     }
 
-    fn open(&self, path: &CStr, fi: &mut FileInfo) -> Result<()> {
+    fn open(&self, path: &CStr, fi: &mut FileInfo) -> OperationResult<()> {
         let path = self.resolve_path(path);
         log::trace!("open(path={:?})", path);
 
@@ -339,7 +345,7 @@ impl Operations for Filesystem {
         buf: &mut [u8],
         offset: off_t,
         fi: Option<&mut FileInfo>,
-    ) -> Result<usize> {
+    ) -> OperationResult<usize> {
         let path = self.resolve_path(path);
         log::trace!("read(path={:?})", path);
 
@@ -374,7 +380,7 @@ impl Operations for Filesystem {
         buf: &[u8],
         offset: off_t,
         fi: Option<&mut FileInfo>,
-    ) -> Result<usize> {
+    ) -> OperationResult<usize> {
         let path = self.resolve_path(path);
         log::trace!("write(path={:?})", path);
 
@@ -403,7 +409,7 @@ impl Operations for Filesystem {
         Ok(res as usize)
     }
 
-    fn statfs(&self, path: &CStr, stbuf: &mut statvfs) -> Result<()> {
+    fn statfs(&self, path: &CStr, stbuf: &mut statvfs) -> OperationResult<()> {
         let path = self.resolve_path(path);
         log::trace!("statfs(path={:?})", path);
 
@@ -415,7 +421,7 @@ impl Operations for Filesystem {
         Ok(())
     }
 
-    fn release(&self, path: &CStr, fi: &mut FileInfo) -> Result<()> {
+    fn release(&self, path: &CStr, fi: &mut FileInfo) -> OperationResult<()> {
         let path = self.resolve_path(path);
         log::trace!("release(path={:?})", path);
 
@@ -429,7 +435,12 @@ impl Operations for Filesystem {
         Ok(())
     }
 
-    fn utimens(&self, path: &CStr, ts: &[timespec; 2], fi: Option<&mut FileInfo>) -> Result<()> {
+    fn utimens(
+        &self,
+        path: &CStr,
+        ts: &[timespec; 2],
+        fi: Option<&mut FileInfo>,
+    ) -> OperationResult<()> {
         let path = self.resolve_path(path);
         log::trace!("utimens(path={:?})", path);
 
@@ -445,7 +456,12 @@ impl Operations for Filesystem {
         Ok(())
     }
 
-    fn fsync(&self, _path: &CStr, _isdatasync: c_int, _fi: Option<&mut FileInfo>) -> Result<()> {
+    fn fsync(
+        &self,
+        _path: &CStr,
+        _isdatasync: c_int,
+        _fi: Option<&mut FileInfo>,
+    ) -> OperationResult<()> {
         // Just a stub.
         // This method is optional and can safely be left unimplemented.
         Ok(())
@@ -458,7 +474,7 @@ impl Operations for Filesystem {
         offset: off_t,
         length: off_t,
         fi: Option<&mut FileInfo>,
-    ) -> Result<()> {
+    ) -> OperationResult<()> {
         let path = self.resolve_path(path);
         log::trace!(
             "fallocate(path={:?}, mode={}, offset={}, length={})",
@@ -491,7 +507,13 @@ impl Operations for Filesystem {
         Ok(())
     }
 
-    fn setxattr(&self, path: &CStr, name: &CStr, value: &[u8], flags: c_int) -> Result<()> {
+    fn setxattr(
+        &self,
+        path: &CStr,
+        name: &CStr,
+        value: &[u8],
+        flags: c_int,
+    ) -> OperationResult<()> {
         let path = self.resolve_path(path);
         log::trace!(
             "setxattr(path={:?}, name={:?}, value=[..;{}], flags={})",
@@ -517,7 +539,7 @@ impl Operations for Filesystem {
         Ok(())
     }
 
-    fn getxattr(&self, path: &CStr, name: &CStr, value: &mut [u8]) -> Result<()> {
+    fn getxattr(&self, path: &CStr, name: &CStr, value: &mut [u8]) -> OperationResult<()> {
         let path = self.resolve_path(path);
         log::trace!("getxattr(path={:?}, name={:?})", path, name);
 
@@ -536,7 +558,7 @@ impl Operations for Filesystem {
         Ok(())
     }
 
-    fn listxattr(&self, path: &CStr, list: &mut [u8]) -> Result<()> {
+    fn listxattr(&self, path: &CStr, list: &mut [u8]) -> OperationResult<()> {
         let path = self.resolve_path(path);
         log::trace!("listxattr(path={:?})", path,);
 
@@ -550,7 +572,7 @@ impl Operations for Filesystem {
         Ok(())
     }
 
-    fn removexattr(&self, path: &CStr, name: &CStr) -> Result<()> {
+    fn removexattr(&self, path: &CStr, name: &CStr) -> OperationResult<()> {
         let path = self.resolve_path(path);
         log::trace!("removexattr(path={:?}, name={:?})", path, name);
 
@@ -572,7 +594,7 @@ impl Operations for Filesystem {
         offset_out: off_t,
         len: usize,
         flags: c_int,
-    ) -> Result<isize> {
+    ) -> OperationResult<usize> {
         let path_in = self.resolve_path(path_in);
         let path_out = self.resolve_path(path_out);
         log::trace!("copy_file_range(path_in={:?}, offset_in={}, path_out={:?}, offset_out={}, len={}, flags={})", path_in, offset_in, path_out, offset_out, len, flags);
@@ -612,7 +634,7 @@ impl Operations for Filesystem {
             return Err(errno());
         }
 
-        Ok(res as isize)
+        Ok(res as usize)
     }
 }
 

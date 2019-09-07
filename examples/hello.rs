@@ -1,7 +1,7 @@
 use libc::{off_t, stat};
 use libfuse::{
     dir::{FillDir, ReadDirFlags},
-    Config, ConnInfo, FileInfo, Fuse, Operations, Result,
+    Config, ConnInfo, FileInfo, Fuse, OperationResult, Operations,
 };
 use std::ffi::{CStr, CString};
 use structopt::StructOpt;
@@ -45,7 +45,7 @@ impl Operations for Hello {
         cfg.kernel_cache(true);
     }
 
-    fn getattr(&self, path: &CStr, _: Option<&mut FileInfo>) -> Result<stat> {
+    fn getattr(&self, path: &CStr, _: Option<&mut FileInfo>) -> OperationResult<stat> {
         log::trace!("Hello::getattr(path={:?})", path);
 
         let mut stat = unsafe { std::mem::zeroed::<stat>() };
@@ -71,7 +71,7 @@ impl Operations for Hello {
         _: off_t,
         _: Option<&mut FileInfo>,
         _: ReadDirFlags,
-    ) -> Result<()> {
+    ) -> OperationResult<()> {
         log::trace!("Hello::readdir(path={:?})", path);
         if path.to_bytes() != b"/" {
             return Err(libc::ENOENT);
@@ -84,7 +84,7 @@ impl Operations for Hello {
         Ok(())
     }
 
-    fn open(&self, path: &CStr, fi: &mut FileInfo) -> Result<()> {
+    fn open(&self, path: &CStr, fi: &mut FileInfo) -> OperationResult<()> {
         log::trace!("Hello::open(path={:?})", path);
         if path.to_bytes()[1..] != *self.filename.to_bytes() {
             return Err(libc::ENOENT);
@@ -101,7 +101,7 @@ impl Operations for Hello {
         buf: &mut [u8],
         offset: off_t,
         _: Option<&mut FileInfo>,
-    ) -> Result<usize> {
+    ) -> OperationResult<usize> {
         log::trace!("Hello::read(path={:?})", path);
 
         debug_assert!(offset >= 0);

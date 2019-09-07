@@ -1,9 +1,9 @@
 use libc::{c_int, off_t, stat};
-use libfuse::lowlevel::{Ino, OperationResult, Operations, Session};
-use libfuse_sys::{
-    fuse_entry_param, //
-    fuse_file_info,
+use libfuse::{
+    ll::{OperationResult, Operations, Session},
+    DirEntry, Ino,
 };
+use libfuse_sys::fuse_file_info;
 use std::{env, ffi::CStr, mem, path::PathBuf};
 
 const HELLO_STR: &str = "Hello World!\n";
@@ -29,7 +29,7 @@ fn main() {
 struct Hello;
 
 impl Operations for Hello {
-    fn lookup(&mut self, parent: Ino, name: &CStr) -> OperationResult<fuse_entry_param> {
+    fn lookup(&mut self, parent: Ino, name: &CStr) -> OperationResult<DirEntry> {
         if parent != 1 {
             return Err(libc::ENOENT);
         }
@@ -39,18 +39,16 @@ impl Operations for Hello {
             _ => return Err(libc::ENOENT),
         }
 
-        let mut e = unsafe { mem::zeroed::<fuse_entry_param>() };
-        e.ino = 2;
-        e.attr_timeout = 1.0;
-        e.entry_timeout = 1.0;
-        let _ = hello_stat(e.ino, &mut e.attr);
+        let e = DirEntry::new(2)
+            .attr(hello_stat(2)?)
+            .attr_timeout(1.0)
+            .entry_timeout(1.0);
         Ok(e)
     }
 
     fn getattr(&mut self, ino: Ino, _: *mut fuse_file_info) -> OperationResult<(stat, f64)> {
-        let mut stbuf = unsafe { mem::zeroed::<stat>() };
-        match hello_stat(ino, &mut stbuf) {
-            Ok(()) => Ok((stbuf, 1.0)),
+        match hello_stat(ino) {
+            Ok(stat) => Ok((stat, 1.0)),
             Err(_) => Err(libc::ENOENT),
         }
     }
@@ -89,7 +87,7 @@ impl Operations for Hello {
     fn readdir(
         &mut self,
         ino: Ino,
-        buf: &mut libfuse::lowlevel::DirBuf<'_>,
+        buf: &mut libfuse::ll::DirBuf<'_>,
         _: *mut fuse_file_info,
     ) -> OperationResult<()> {
         if ino != 1 {
@@ -104,7 +102,8 @@ impl Operations for Hello {
     }
 }
 
-fn hello_stat(ino: Ino, stbuf: &mut stat) -> Result<(), c_int> {
+fn hello_stat(ino: Ino) -> Result<stat, c_int> {
+    let mut stbuf = unsafe { mem::zeroed::<stat>() };
     stbuf.st_ino = ino;
     match ino {
         1 => {
@@ -118,5 +117,5 @@ fn hello_stat(ino: Ino, stbuf: &mut stat) -> Result<(), c_int> {
         }
         _ => return Err(libc::ENOENT),
     }
-    Ok(())
+    Ok(stbuf)
 }

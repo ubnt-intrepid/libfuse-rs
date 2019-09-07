@@ -1,6 +1,7 @@
 use crate::{
     dir::{FillDir, ReadDirFlags},
-    Config, ConnInfo, FileInfo, Result,
+    util::*,
+    Config, ConnInfo, FileInfo,
 };
 use libc::{
     c_char, c_int, c_uint, c_void, dev_t, gid_t, mode_t, off_t, stat, statvfs, timespec, uid_t,
@@ -14,6 +15,8 @@ use std::{convert::TryFrom, ffi::CStr, mem, slice};
 #[allow(nonstandard_style)]
 type c_str = *const c_char;
 
+pub type OperationResult<T> = std::result::Result<T, libc::c_int>;
+
 /// A set of functions called by libfuse.
 #[allow(unused_variables)]
 pub trait Operations: Send + Sync + 'static {
@@ -21,82 +24,88 @@ pub trait Operations: Send + Sync + 'static {
     fn init(&mut self, conn: &mut ConnInfo, cfg: &mut Config) {}
 
     /// Check the file access permissions.
-    fn access(&self, path: &CStr, mask: c_int) -> Result<()> {
+    fn access(&self, path: &CStr, mask: c_int) -> OperationResult<()> {
         Err(libc::ENOSYS)
     }
 
     /// Read the target of a symbolic link.
-    fn readlink(&self, path: &CStr, buf: &mut [u8]) -> Result<()> {
+    fn readlink(&self, path: &CStr, buf: &mut [u8]) -> OperationResult<()> {
         Err(libc::ENOSYS)
     }
 
     /// Create a file node.
-    fn mknod(&self, path: &CStr, mode: mode_t, rdev: dev_t) -> Result<()> {
+    fn mknod(&self, path: &CStr, mode: mode_t, rdev: dev_t) -> OperationResult<()> {
         Err(libc::ENOSYS)
     }
 
     /// Create a directory.
-    fn mkdir(&self, path: &CStr, mode: mode_t) -> Result<()> {
+    fn mkdir(&self, path: &CStr, mode: mode_t) -> OperationResult<()> {
         Err(libc::ENOSYS)
     }
 
     /// Remove a file.
-    fn unlink(&self, path: &CStr) -> Result<()> {
+    fn unlink(&self, path: &CStr) -> OperationResult<()> {
         Err(libc::ENOSYS)
     }
 
     /// Remove a directory.
-    fn rmdir(&self, path: &CStr) -> Result<()> {
+    fn rmdir(&self, path: &CStr) -> OperationResult<()> {
         Err(libc::ENOSYS)
     }
 
     /// Create a symbolic link.
-    fn symlink(&self, path_from: &CStr, path_to: &CStr) -> Result<()> {
+    fn symlink(&self, path_from: &CStr, path_to: &CStr) -> OperationResult<()> {
         Err(libc::ENOSYS)
     }
 
     /// Rename a file.
-    fn rename(&self, path_from: &CStr, path_to: &CStr, flags: c_uint) -> Result<()> {
+    fn rename(&self, path_from: &CStr, path_to: &CStr, flags: c_uint) -> OperationResult<()> {
         Err(libc::ENOSYS)
     }
 
     /// Create a hard link to a file.
-    fn link(&self, path_from: &CStr, path_to: &CStr) -> Result<()> {
+    fn link(&self, path_from: &CStr, path_to: &CStr) -> OperationResult<()> {
         Err(libc::ENOSYS)
     }
 
     /// Get file system statistics.
-    fn statfs(&self, path: &CStr, stbuf: &mut statvfs) -> Result<()> {
+    fn statfs(&self, path: &CStr, stbuf: &mut statvfs) -> OperationResult<()> {
         Err(libc::ENOSYS)
     }
 
     /// Set extended attributes.
-    fn setxattr(&self, path: &CStr, name: &CStr, value: &[u8], flags: c_int) -> Result<()> {
+    fn setxattr(
+        &self,
+        path: &CStr,
+        name: &CStr,
+        value: &[u8],
+        flags: c_int,
+    ) -> OperationResult<()> {
         Err(libc::ENOSYS)
     }
 
     /// Get extended attributes.
-    fn getxattr(&self, path: &CStr, name: &CStr, value: &mut [u8]) -> Result<()> {
+    fn getxattr(&self, path: &CStr, name: &CStr, value: &mut [u8]) -> OperationResult<()> {
         Err(libc::ENOSYS)
     }
 
     /// List extended attributes.
-    fn listxattr(&self, path: &CStr, list: &mut [u8]) -> Result<()> {
+    fn listxattr(&self, path: &CStr, list: &mut [u8]) -> OperationResult<()> {
         Err(libc::ENOSYS)
     }
 
     /// Remove extended attributes.
-    fn removexattr(&self, path: &CStr, name: &CStr) -> Result<()> {
+    fn removexattr(&self, path: &CStr, name: &CStr) -> OperationResult<()> {
         Err(libc::ENOSYS)
     }
 
     /// Create and open a file.
-    fn create(&self, path: &CStr, mode: mode_t, fi: &mut FileInfo) -> Result<()> {
+    fn create(&self, path: &CStr, mode: mode_t, fi: &mut FileInfo) -> OperationResult<()> {
         Err(libc::ENOSYS)
     }
 
     /// Open a file.
-    fn open(&self, path: &CStr, fi: &mut FileInfo) -> Result<()> {
+    fn open(&self, path: &CStr, fi: &mut FileInfo) -> OperationResult<()> {
         Err(libc::ENOSYS)
     }
 
@@ -107,7 +116,7 @@ pub trait Operations: Send + Sync + 'static {
         buf: &mut [u8],
         offset: off_t,
         fi: Option<&mut FileInfo>,
-    ) -> Result<usize> {
+    ) -> OperationResult<usize> {
         Err(libc::ENOSYS)
     }
 
@@ -118,37 +127,53 @@ pub trait Operations: Send + Sync + 'static {
         buf: &[u8],
         offset: off_t,
         fi: Option<&mut FileInfo>,
-    ) -> Result<usize> {
+    ) -> OperationResult<usize> {
         Err(libc::ENOSYS)
     }
 
     /// Get file attributes.
-    fn getattr(&self, path: &CStr, fi: Option<&mut FileInfo>) -> Result<stat> {
+    fn getattr(&self, path: &CStr, fi: Option<&mut FileInfo>) -> OperationResult<stat> {
         Err(libc::ENOSYS)
     }
 
     /// Change the permission bits of a file.
-    fn chmod(&self, path: &CStr, mode: mode_t, fi: Option<&mut FileInfo>) -> Result<()> {
+    fn chmod(&self, path: &CStr, mode: mode_t, fi: Option<&mut FileInfo>) -> OperationResult<()> {
         Err(libc::ENOSYS)
     }
 
     /// Change the owner and group of a file.
-    fn chown(&self, path: &CStr, uid: uid_t, gid: gid_t, fi: Option<&mut FileInfo>) -> Result<()> {
+    fn chown(
+        &self,
+        path: &CStr,
+        uid: uid_t,
+        gid: gid_t,
+        fi: Option<&mut FileInfo>,
+    ) -> OperationResult<()> {
         Err(libc::ENOSYS)
     }
 
     /// Change the size of a file.
-    fn truncate(&self, path: &CStr, size: off_t, fi: Option<&mut FileInfo>) -> Result<()> {
+    fn truncate(&self, path: &CStr, size: off_t, fi: Option<&mut FileInfo>) -> OperationResult<()> {
         Err(libc::ENOSYS)
     }
 
     /// Change the access and modification times of a file with nanosecond resolution.
-    fn utimens(&self, path: &CStr, ts: &[timespec; 2], fi: Option<&mut FileInfo>) -> Result<()> {
+    fn utimens(
+        &self,
+        path: &CStr,
+        ts: &[timespec; 2],
+        fi: Option<&mut FileInfo>,
+    ) -> OperationResult<()> {
         Err(libc::ENOSYS)
     }
 
     /// Synchronize the file contents.
-    fn fsync(&self, path: &CStr, isdatasync: c_int, fi: Option<&mut FileInfo>) -> Result<()> {
+    fn fsync(
+        &self,
+        path: &CStr,
+        isdatasync: c_int,
+        fi: Option<&mut FileInfo>,
+    ) -> OperationResult<()> {
         Err(libc::ENOSYS)
     }
 
@@ -160,7 +185,7 @@ pub trait Operations: Send + Sync + 'static {
         offset: off_t,
         length: off_t,
         fi: Option<&mut FileInfo>,
-    ) -> Result<()> {
+    ) -> OperationResult<()> {
         Err(libc::ENOSYS)
     }
 
@@ -175,12 +200,12 @@ pub trait Operations: Send + Sync + 'static {
         offset_out: off_t,
         len: usize,
         flags: c_int,
-    ) -> Result<isize> {
+    ) -> OperationResult<usize> {
         Err(libc::ENOSYS)
     }
 
     /// Release an opened file.
-    fn release(&self, path: &CStr, fi: &mut FileInfo) -> Result<()> {
+    fn release(&self, path: &CStr, fi: &mut FileInfo) -> OperationResult<()> {
         Err(libc::ENOSYS)
     }
 
@@ -192,7 +217,7 @@ pub trait Operations: Send + Sync + 'static {
         offset: off_t,
         fi: Option<&mut FileInfo>,
         flags: ReadDirFlags,
-    ) -> Result<()> {
+    ) -> OperationResult<()> {
         Err(libc::ENOSYS)
     }
 }
@@ -241,19 +266,6 @@ pub fn make_fuse_operations<T: Operations>() -> fuse_operations {
         write_buf: None,
         write: Some(lib_write::<T>),
     }
-}
-
-fn make_mut<'a, T>(ptr: *mut T) -> Option<&'a mut T> {
-    if !ptr.is_null() {
-        Some(unsafe { &mut *ptr })
-    } else {
-        None
-    }
-}
-
-unsafe fn make_mut_unchecked<'a, T>(ptr: *mut T) -> &'a mut T {
-    debug_assert!(!ptr.is_null());
-    &mut *ptr
 }
 
 unsafe fn call_with_ops<F: Operations, T>(f: impl FnOnce(&F) -> T) -> T {
@@ -659,7 +671,7 @@ unsafe extern "C" fn lib_copy_file_range<T: Operations>(
             len,
             flags,
         ) {
-            Ok(len) => len,
+            Ok(len) => len as isize,
             Err(errno) => -errno as isize,
         }
     })

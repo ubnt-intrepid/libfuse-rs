@@ -1,11 +1,14 @@
 #![allow(unused_variables)]
 
+use crate::{
+    common::{ConnInfo, DirEntry, Ino},
+    util::*,
+};
 use libc::{c_char, c_int, c_uint, c_void, dev_t, mode_t, off_t, stat};
 use libfuse_sys::{
-    fuse_add_direntry,
+    fuse_add_direntry, //
     fuse_conn_info,
-    fuse_entry_param,
-    fuse_file_info, //
+    fuse_file_info,
     fuse_ino_t,
     fuse_lowlevel_ops,
     fuse_reply_attr,
@@ -26,17 +29,14 @@ use std::{
     mem, ptr,
 };
 
-/// The type of inode number used in the filesystem.
-pub type Ino = fuse_ino_t;
-
 pub type OperationResult<T> = std::result::Result<T, c_int>;
 
 pub trait Operations {
     /// Initialize the filesystem.
-    fn init(&mut self, conn: *mut fuse_conn_info) {}
+    fn init(&mut self, conn: &mut ConnInfo) {}
 
     /// Look up a directory entry by name and get its attributes.
-    fn lookup(&mut self, parent: Ino, name: &CStr) -> OperationResult<fuse_entry_param> {
+    fn lookup(&mut self, parent: Ino, name: &CStr) -> OperationResult<DirEntry> {
         Err(libc::ENOSYS)
     }
 
@@ -57,17 +57,12 @@ pub trait Operations {
         name: &CStr,
         mode: mode_t,
         rdev: dev_t,
-    ) -> OperationResult<fuse_entry_param> {
+    ) -> OperationResult<DirEntry> {
         Err(libc::ENOSYS)
     }
 
     /// Create a directory.
-    fn mkdir(
-        &mut self,
-        parent: Ino,
-        name: &CStr,
-        mode: mode_t,
-    ) -> OperationResult<fuse_entry_param> {
+    fn mkdir(&mut self, parent: Ino, name: &CStr, mode: mode_t) -> OperationResult<DirEntry> {
         Err(libc::ENOSYS)
     }
 
@@ -82,12 +77,7 @@ pub trait Operations {
     }
 
     /// Create a symbolic link.
-    fn symlink(
-        &mut self,
-        link: &CStr,
-        parent: Ino,
-        name: &CStr,
-    ) -> OperationResult<fuse_entry_param> {
+    fn symlink(&mut self, link: &CStr, parent: Ino, name: &CStr) -> OperationResult<DirEntry> {
         Err(libc::ENOSYS)
     }
 
@@ -104,12 +94,7 @@ pub trait Operations {
     }
 
     /// Create a hard link.
-    fn link(
-        &mut self,
-        ino: Ino,
-        newparent: Ino,
-        newname: &CStr,
-    ) -> OperationResult<fuse_entry_param> {
+    fn link(&mut self, ino: Ino, newparent: Ino, newname: &CStr) -> OperationResult<DirEntry> {
         Err(libc::ENOSYS)
     }
 
@@ -125,7 +110,7 @@ pub trait Operations {
         name: &CStr,
         mode: mode_t,
         fi: &mut fuse_file_info,
-    ) -> OperationResult<fuse_entry_param> {
+    ) -> OperationResult<DirEntry> {
         Err(libc::ENOSYS)
     }
 
@@ -235,8 +220,8 @@ unsafe fn call_with_ops<T: Operations>(
 }
 
 unsafe extern "C" fn ops_init<T: Operations>(user_data: *mut c_void, conn: *mut fuse_conn_info) {
-    debug_assert!(!user_data.is_null());
-    let ops = &mut *(user_data as *mut T);
+    let ops = make_mut_unchecked(user_data as *mut T);
+    let conn = make_mut_unchecked(conn as *mut ConnInfo);
     ops.init(conn);
 }
 
@@ -251,7 +236,7 @@ unsafe extern "C" fn ops_lookup<T: Operations>(
 ) {
     call_with_ops(req, |ops: &mut T, req| {
         match ops.lookup(parent, CStr::from_ptr(name)) {
-            Ok(entry) => fuse_reply_entry(req, &entry),
+            Ok(DirEntry(entry)) => fuse_reply_entry(req, &entry),
             Err(errno) => fuse_reply_err(req, errno),
         }
     })
@@ -283,7 +268,7 @@ unsafe extern "C" fn ops_mknod<T: Operations>(
 ) {
     call_with_ops(req, |ops: &mut T, req| {
         match ops.mknod(parent, CStr::from_ptr(name), mode, rdev) {
-            Ok(entry) => fuse_reply_entry(req, &entry),
+            Ok(DirEntry(entry)) => fuse_reply_entry(req, &entry),
             Err(errno) => fuse_reply_err(req, errno),
         }
     })
@@ -297,7 +282,7 @@ unsafe extern "C" fn ops_mkdir<T: Operations>(
 ) {
     call_with_ops(req, |ops: &mut T, req| {
         match ops.mkdir(parent, CStr::from_ptr(name), mode) {
-            Ok(entry) => fuse_reply_entry(req, &entry),
+            Ok(DirEntry(entry)) => fuse_reply_entry(req, &entry),
             Err(errno) => fuse_reply_err(req, errno),
         }
     })
@@ -341,7 +326,7 @@ unsafe extern "C" fn ops_symlink<T: Operations>(
 ) {
     call_with_ops(req, |ops: &mut T, req| {
         match ops.symlink(CStr::from_ptr(link), parent, CStr::from_ptr(name)) {
-            Ok(entry) => fuse_reply_entry(req, &entry),
+            Ok(DirEntry(entry)) => fuse_reply_entry(req, &entry),
             Err(errno) => fuse_reply_err(req, errno),
         }
     })
@@ -379,7 +364,7 @@ unsafe extern "C" fn ops_link<T: Operations>(
 ) {
     call_with_ops(req, |ops: &mut T, req| {
         match ops.link(ino, newparent, CStr::from_ptr(newname)) {
-            Ok(entry) => fuse_reply_entry(req, &entry),
+            Ok(DirEntry(entry)) => fuse_reply_entry(req, &entry),
             Err(errno) => fuse_reply_err(req, errno),
         }
     })
@@ -391,8 +376,7 @@ unsafe extern "C" fn ops_open<T: Operations>(
     fi: *mut fuse_file_info,
 ) {
     call_with_ops(req, |ops: &mut T, req| {
-        debug_assert!(!fi.is_null());
-        let fi = &mut *fi;
+        let fi = make_mut_unchecked(fi);
         match ops.open(ino, fi) {
             Ok(()) => fuse_reply_open(req, fi),
             Err(errno) => fuse_reply_err(req, errno),
@@ -408,10 +392,9 @@ unsafe extern "C" fn ops_create<T: Operations>(
     fi: *mut fuse_file_info,
 ) {
     call_with_ops(req, |ops: &mut T, req| {
-        debug_assert!(!fi.is_null());
-        let fi = &mut *fi;
+        let fi = make_mut_unchecked(fi);
         match ops.create(parent, CStr::from_ptr(name), mode, fi) {
-            Ok(entry) => fuse_reply_create(req, &entry, fi),
+            Ok(DirEntry(entry)) => fuse_reply_create(req, &entry, fi),
             Err(errno) => fuse_reply_err(req, errno),
         }
     })
