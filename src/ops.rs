@@ -9,7 +9,7 @@ use libfuse_sys::{
     fuse_config, fuse_conn_info, fuse_file_info, fuse_fill_dir_t, fuse_operations,
     fuse_readdir_flags,
 };
-use std::{convert::TryFrom, ffi::CStr, mem, ptr::NonNull, slice};
+use std::{convert::TryFrom, ffi::CStr, mem, slice};
 
 #[allow(nonstandard_style)]
 type c_str = *const c_char;
@@ -19,9 +19,6 @@ type c_str = *const c_char;
 pub trait Operations: Send + Sync + 'static {
     /// Initialize the filesystem.
     fn init(&mut self, conn: &mut ConnInfo, cfg: &mut Config) {}
-
-    /// Clean up the filesystem.
-    fn destroy(&mut self) {}
 
     /// Check the file access permissions.
     fn access(&self, path: &CStr, mask: c_int) -> Result<()> {
@@ -110,7 +107,7 @@ pub trait Operations: Send + Sync + 'static {
         buf: &mut [u8],
         offset: off_t,
         fi: Option<&mut FileInfo>,
-    ) -> Result<()> {
+    ) -> Result<usize> {
         Err(libc::ENOSYS)
     }
 
@@ -121,12 +118,12 @@ pub trait Operations: Send + Sync + 'static {
         buf: &[u8],
         offset: off_t,
         fi: Option<&mut FileInfo>,
-    ) -> Result<()> {
+    ) -> Result<usize> {
         Err(libc::ENOSYS)
     }
 
     /// Get file attributes.
-    fn getattr(&self, path: &CStr, stbuf: &mut stat, fi: Option<&mut FileInfo>) -> Result<()> {
+    fn getattr(&self, path: &CStr, fi: Option<&mut FileInfo>) -> Result<stat> {
         Err(libc::ENOSYS)
     }
 
@@ -200,472 +197,446 @@ pub trait Operations: Send + Sync + 'static {
     }
 }
 
-pub fn make_fuse_operations<F: Operations>() -> fuse_operations {
+pub fn make_fuse_operations<T: Operations>() -> fuse_operations {
     fuse_operations {
-        access: Some(lib_access::<F>),
+        access: Some(lib_access::<T>),
         bmap: None,
-        chmod: Some(lib_chmod::<F>),
-        chown: Some(lib_chown::<F>),
-        copy_file_range: Some(lib_copy_file_range::<F>),
-        create: Some(lib_create::<F>),
-        destroy: Some(lib_destroy::<F>),
-        fallocate: Some(lib_fallocate::<F>),
+        chmod: Some(lib_chmod::<T>),
+        chown: Some(lib_chown::<T>),
+        copy_file_range: Some(lib_copy_file_range::<T>),
+        create: Some(lib_create::<T>),
+        destroy: Some(lib_destroy::<T>),
+        fallocate: Some(lib_fallocate::<T>),
         flock: None,
         flush: None,
-        fsync: Some(lib_fsync::<F>),
+        fsync: Some(lib_fsync::<T>),
         fsyncdir: None,
-        getattr: Some(lib_getattr::<F>),
-        getxattr: Some(lib_getxattr::<F>),
-        init: Some(lib_init::<F>),
+        getattr: Some(lib_getattr::<T>),
+        getxattr: Some(lib_getxattr::<T>),
+        init: Some(lib_init::<T>),
         ioctl: None,
-        link: Some(lib_link::<F>),
-        listxattr: Some(lib_listxattr::<F>),
+        link: Some(lib_link::<T>),
+        listxattr: Some(lib_listxattr::<T>),
         lock: None,
-        mkdir: Some(lib_mkdir::<F>),
-        mknod: Some(lib_mknod::<F>),
-        open: Some(lib_open::<F>),
+        mkdir: Some(lib_mkdir::<T>),
+        mknod: Some(lib_mknod::<T>),
+        open: Some(lib_open::<T>),
         opendir: None,
         poll: None,
         read_buf: None,
-        read: Some(lib_read::<F>),
-        readdir: Some(lib_readdir::<F>),
-        readlink: Some(lib_readlink::<F>),
-        release: Some(lib_release::<F>),
+        read: Some(lib_read::<T>),
+        readdir: Some(lib_readdir::<T>),
+        readlink: Some(lib_readlink::<T>),
+        release: Some(lib_release::<T>),
         releasedir: None,
-        removexattr: Some(lib_removexattr::<F>),
-        rename: Some(lib_rename::<F>),
-        rmdir: Some(lib_rmdir::<F>),
-        setxattr: Some(lib_setxattr::<F>),
-        statfs: Some(lib_statfs::<F>),
-        symlink: Some(lib_symlink::<F>),
-        truncate: Some(lib_truncate::<F>),
-        unlink: Some(lib_unlink::<F>),
-        utimens: Some(lib_utimens::<F>),
+        removexattr: Some(lib_removexattr::<T>),
+        rename: Some(lib_rename::<T>),
+        rmdir: Some(lib_rmdir::<T>),
+        setxattr: Some(lib_setxattr::<T>),
+        statfs: Some(lib_statfs::<T>),
+        symlink: Some(lib_symlink::<T>),
+        truncate: Some(lib_truncate::<T>),
+        unlink: Some(lib_unlink::<T>),
+        utimens: Some(lib_utimens::<T>),
         write_buf: None,
-        write: Some(lib_write::<F>),
+        write: Some(lib_write::<T>),
     }
 }
 
-unsafe fn get_private_data<F: Operations, T>(f: impl FnOnce(&F) -> T) -> T {
-    let cx = libfuse_sys::fuse_get_context();
-    debug_assert!(!cx.is_null());
-    let cx = &mut *cx;
+fn make_mut<'a, T>(ptr: *mut T) -> Option<&'a mut T> {
+    if !ptr.is_null() {
+        Some(unsafe { &mut *ptr })
+    } else {
+        None
+    }
+}
+
+unsafe fn make_mut_unchecked<'a, T>(ptr: *mut T) -> &'a mut T {
+    debug_assert!(!ptr.is_null());
+    &mut *ptr
+}
+
+unsafe fn call_with_ops<F: Operations, T>(f: impl FnOnce(&F) -> T) -> T {
+    let cx = make_mut_unchecked(libfuse_sys::fuse_get_context());
+
     debug_assert!(!cx.private_data.is_null());
     let data = &*(cx.private_data as *mut F as *const F);
+
     f(data)
 }
 
-unsafe extern "C" fn lib_init<F: Operations>(
+unsafe extern "C" fn lib_init<T: Operations>(
     conn: *mut fuse_conn_info,
     cfg: *mut fuse_config,
 ) -> *mut c_void {
-    debug_assert!(!conn.is_null());
-    let mut conn = NonNull::new_unchecked(conn).cast::<ConnInfo>();
+    let conn = make_mut_unchecked(conn as *mut ConnInfo);
+    let cfg = make_mut_unchecked(cfg as *mut Config);
 
-    debug_assert!(!cfg.is_null());
-    let mut cfg = NonNull::new_unchecked(cfg).cast::<Config>();
+    let cx = make_mut_unchecked(libfuse_sys::fuse_get_context());
+    let data = make_mut_unchecked(cx.private_data as *mut T);
+    data.init(conn, cfg);
 
-    let cx = libfuse_sys::fuse_get_context();
-    debug_assert!(!cx.is_null());
-
-    let data_ptr = (&mut *cx).private_data;
-    debug_assert!(!data_ptr.is_null());
-
-    (&mut *(data_ptr as *mut F)).init(conn.as_mut(), cfg.as_mut());
-
-    data_ptr
+    // Returning null_mut() here means that libfuse initializes
+    // the pointer of user data with NULL and the data cannot
+    // longer be used in the other callbacks.
+    data as *mut T as *mut c_void
 }
 
 unsafe extern "C" fn lib_destroy<F: Operations>(fs: *mut c_void) {
-    let mut data = Box::from_raw(fs as *mut F);
-    data.destroy();
+    let data = Box::from_raw(fs as *mut F);
     mem::drop(data);
 }
 
-unsafe extern "C" fn lib_getattr<F: Operations>(
+unsafe extern "C" fn lib_getattr<T: Operations>(
     path: c_str,
     stbuf: *mut stat,
     fi: *mut fuse_file_info,
 ) -> c_int {
-    debug_assert!(!stbuf.is_null());
-    let mut stbuf = NonNull::new_unchecked(stbuf);
-    let mut fi = NonNull::new(fi).map(NonNull::cast::<FileInfo>);
-    get_private_data(|fs: &F| {
-        match fs.getattr(
-            CStr::from_ptr(path),
-            stbuf.as_mut(),
-            fi.as_mut().map(|fi| fi.as_mut()),
-        ) {
-            Ok(()) => 0,
+    call_with_ops(|ops: &T| {
+        let path = CStr::from_ptr(path);
+        let stbuf = make_mut_unchecked(stbuf);
+        let fi = make_mut(fi as *mut FileInfo);
+        match ops.getattr(path, fi) {
+            Ok(stat) => {
+                mem::replace(stbuf, stat);
+                0
+            }
             Err(errno) => -errno,
         }
     })
 }
 
-unsafe extern "C" fn lib_access<F: Operations>(path: c_str, mask: c_int) -> c_int {
-    get_private_data(|fs: &F| match fs.access(CStr::from_ptr(path), mask) {
+unsafe extern "C" fn lib_access<T: Operations>(path: c_str, mask: c_int) -> c_int {
+    call_with_ops(|ops: &T| match ops.access(CStr::from_ptr(path), mask) {
         Ok(()) => 0,
         Err(errno) => -errno,
     })
 }
 
-unsafe extern "C" fn lib_readlink<F: Operations>(
+unsafe extern "C" fn lib_readlink<T: Operations>(
     path: c_str,
     buf: *mut c_char,
     size: usize,
 ) -> c_int {
-    get_private_data(|fs: &F| {
+    call_with_ops(|ops: &T| {
         let path = CStr::from_ptr(path);
         let buf = slice::from_raw_parts_mut(buf as *mut u8, size);
-        match fs.readlink(path, buf) {
+        match ops.readlink(path, buf) {
             Ok(()) => 0,
             Err(errno) => -errno,
         }
     })
 }
 
-unsafe extern "C" fn lib_readdir<F: Operations>(
-    path: *const c_char,
+unsafe extern "C" fn lib_readdir<T: Operations>(
+    path: c_str,
     buf: *mut c_void,
     filler: fuse_fill_dir_t,
     offset: off_t,
     fi: *mut fuse_file_info,
     flags: fuse_readdir_flags,
 ) -> c_int {
-    let path = CStr::from_ptr(path);
-    let mut filler = FillDir {
-        buf,
-        filler: filler.expect("filler should not be null"),
-    };
-    let mut fi = NonNull::new(fi).map(NonNull::cast::<FileInfo>);
-    get_private_data(|fs: &F| {
-        match fs.readdir(
-            path,
-            &mut filler,
-            offset,
-            fi.as_mut().map(|fi| fi.as_mut()),
-            ReadDirFlags::from_bits_truncate(flags),
-        ) {
+    call_with_ops(|ops: &T| {
+        let path = CStr::from_ptr(path);
+        let mut filler = FillDir {
+            buf,
+            filler: filler.expect("filler should not be null"),
+        };
+        let fi = make_mut(fi as *mut FileInfo);
+        let flags = ReadDirFlags::from_bits_truncate(flags);
+
+        match ops.readdir(path, &mut filler, offset, fi, flags) {
             Ok(()) => 0,
             Err(errno) => -errno,
         }
     })
 }
 
-unsafe extern "C" fn lib_mknod<F: Operations>(path: c_str, mode: mode_t, rdev: dev_t) -> c_int {
-    get_private_data(|fs: &F| match fs.mknod(CStr::from_ptr(path), mode, rdev) {
-        Ok(()) => 0,
-        Err(errno) => -errno,
-    })
-}
-
-unsafe extern "C" fn lib_mkdir<F: Operations>(path: *const c_char, mode: mode_t) -> c_int {
-    get_private_data(|fs: &F| match fs.mkdir(CStr::from_ptr(path), mode) {
-        Ok(()) => 0,
-        Err(errno) => -errno,
-    })
-}
-
-unsafe extern "C" fn lib_unlink<F: Operations>(path: *const c_char) -> c_int {
-    get_private_data(|fs: &F| match fs.unlink(CStr::from_ptr(path)) {
-        Ok(()) => 0,
-        Err(errno) => -errno,
-    })
-}
-
-unsafe extern "C" fn lib_rmdir<F: Operations>(path: *const c_char) -> c_int {
-    get_private_data(|fs: &F| match fs.rmdir(CStr::from_ptr(path)) {
-        Ok(()) => 0,
-        Err(errno) => -errno,
-    })
-}
-
-unsafe extern "C" fn lib_symlink<F: Operations>(
-    path_from: *const c_char,
-    path_to: *const c_char,
-) -> c_int {
-    get_private_data(|fs: &F| {
-        match fs.symlink(CStr::from_ptr(path_from), CStr::from_ptr(path_to)) {
-            Ok(()) => 0,
-            Err(errno) => -errno,
-        }
-    })
-}
-
-unsafe extern "C" fn lib_rename<F: Operations>(
-    path_from: *const c_char,
-    path_to: *const c_char,
-    flags: c_uint,
-) -> c_int {
-    get_private_data(|fs: &F| {
-        match fs.rename(CStr::from_ptr(path_from), CStr::from_ptr(path_to), flags) {
-            Ok(()) => 0,
-            Err(errno) => -errno,
-        }
-    })
-}
-
-unsafe extern "C" fn lib_link<F: Operations>(
-    path_from: *const c_char,
-    path_to: *const c_char,
-) -> c_int {
-    get_private_data(
-        |fs: &F| match fs.link(CStr::from_ptr(path_from), CStr::from_ptr(path_to)) {
+unsafe extern "C" fn lib_mknod<T: Operations>(path: c_str, mode: mode_t, rdev: dev_t) -> c_int {
+    call_with_ops(
+        |ops: &T| match ops.mknod(CStr::from_ptr(path), mode, rdev) {
             Ok(()) => 0,
             Err(errno) => -errno,
         },
     )
 }
 
-unsafe extern "C" fn lib_chmod<F: Operations>(
-    path: c_str,
-    mode: mode_t,
-    fi: *mut fuse_file_info,
+unsafe extern "C" fn lib_mkdir<T: Operations>(path: c_str, mode: mode_t) -> c_int {
+    call_with_ops(|ops: &T| match ops.mkdir(CStr::from_ptr(path), mode) {
+        Ok(()) => 0,
+        Err(errno) => -errno,
+    })
+}
+
+unsafe extern "C" fn lib_unlink<T: Operations>(path: c_str) -> c_int {
+    call_with_ops(|ops: &T| match ops.unlink(CStr::from_ptr(path)) {
+        Ok(()) => 0,
+        Err(errno) => -errno,
+    })
+}
+
+unsafe extern "C" fn lib_rmdir<T: Operations>(path: c_str) -> c_int {
+    call_with_ops(|ops: &T| match ops.rmdir(CStr::from_ptr(path)) {
+        Ok(()) => 0,
+        Err(errno) => -errno,
+    })
+}
+
+unsafe extern "C" fn lib_symlink<T: Operations>(path_from: c_str, path_to: c_str) -> c_int {
+    call_with_ops(
+        |fs: &T| match fs.symlink(CStr::from_ptr(path_from), CStr::from_ptr(path_to)) {
+            Ok(()) => 0,
+            Err(errno) => -errno,
+        },
+    )
+}
+
+unsafe extern "C" fn lib_rename<T: Operations>(
+    path_from: c_str,
+    path_to: c_str,
+    flags: c_uint,
 ) -> c_int {
-    let mut fi = NonNull::new(fi).map(NonNull::cast::<FileInfo>);
-    get_private_data(|fs: &F| {
-        match fs.chmod(
-            CStr::from_ptr(path),
-            mode,
-            fi.as_mut().map(|fi| fi.as_mut()),
-        ) {
+    call_with_ops(|ops: &T| {
+        match ops.rename(CStr::from_ptr(path_from), CStr::from_ptr(path_to), flags) {
             Ok(()) => 0,
             Err(errno) => -errno,
         }
     })
 }
 
-unsafe extern "C" fn lib_chown<F: Operations>(
+unsafe extern "C" fn lib_link<T: Operations>(path_from: c_str, path_to: c_str) -> c_int {
+    call_with_ops(
+        |ops: &T| match ops.link(CStr::from_ptr(path_from), CStr::from_ptr(path_to)) {
+            Ok(()) => 0,
+            Err(errno) => -errno,
+        },
+    )
+}
+
+unsafe extern "C" fn lib_chmod<T: Operations>(
+    path: c_str,
+    mode: mode_t,
+    fi: *mut fuse_file_info,
+) -> c_int {
+    call_with_ops(|ops: &T| {
+        let fi = make_mut(fi as *mut FileInfo);
+        match ops.chmod(CStr::from_ptr(path), mode, fi) {
+            Ok(()) => 0,
+            Err(errno) => -errno,
+        }
+    })
+}
+
+unsafe extern "C" fn lib_chown<T: Operations>(
     path: c_str,
     uid: uid_t,
     gid: gid_t,
     fi: *mut fuse_file_info,
 ) -> c_int {
-    let mut fi = NonNull::new(fi).map(NonNull::cast::<FileInfo>);
-    get_private_data(|fs: &F| {
-        match fs.chown(
-            CStr::from_ptr(path),
-            uid,
-            gid,
-            fi.as_mut().map(|fi| fi.as_mut()),
-        ) {
+    call_with_ops(|ops: &T| {
+        let fi = make_mut(fi as *mut FileInfo);
+        match ops.chown(CStr::from_ptr(path), uid, gid, fi) {
             Ok(()) => 0,
             Err(errno) => -errno,
         }
     })
 }
 
-unsafe extern "C" fn lib_truncate<F: Operations>(
+unsafe extern "C" fn lib_truncate<T: Operations>(
     path: c_str,
     size: off_t,
     fi: *mut fuse_file_info,
 ) -> c_int {
-    let mut fi = NonNull::new(fi).map(NonNull::cast::<FileInfo>);
-    get_private_data(|fs: &F| {
-        match fs.truncate(
-            CStr::from_ptr(path),
-            size,
-            fi.as_mut().map(|fi| fi.as_mut()),
-        ) {
+    call_with_ops(|ops: &T| {
+        let fi = make_mut(fi as *mut FileInfo);
+        match ops.truncate(CStr::from_ptr(path), size, fi) {
             Ok(()) => 0,
             Err(errno) => -errno,
         }
     })
 }
 
-unsafe extern "C" fn lib_utimens<F: Operations>(
+unsafe extern "C" fn lib_utimens<T: Operations>(
     path: c_str,
     ts: *const timespec,
     fi: *mut fuse_file_info,
 ) -> c_int {
-    let ts = <[timespec; 2]>::try_from(std::slice::from_raw_parts(ts, 2)).expect("invalid length");
-    let mut fi = NonNull::new(fi).map(NonNull::cast::<FileInfo>);
-    get_private_data(|fs: &F| {
-        match fs.utimens(CStr::from_ptr(path), &ts, fi.as_mut().map(|fi| fi.as_mut())) {
+    call_with_ops(|ops: &T| {
+        let ts = <[timespec; 2]>::try_from(std::slice::from_raw_parts(ts, 2)) //
+            .expect("invalid length");
+        let fi = make_mut(fi as *mut FileInfo);
+        match ops.utimens(CStr::from_ptr(path), &ts, fi) {
             Ok(()) => 0,
             Err(errno) => -errno,
         }
     })
 }
 
-unsafe extern "C" fn lib_create<F: Operations>(
+unsafe extern "C" fn lib_create<T: Operations>(
     path: c_str,
     mode: mode_t,
     fi: *mut fuse_file_info,
 ) -> c_int {
-    debug_assert!(!fi.is_null());
-    let mut fi = NonNull::new_unchecked(fi).cast::<FileInfo>();
-    get_private_data(
-        |fs: &F| match fs.create(CStr::from_ptr(path), mode, fi.as_mut()) {
+    call_with_ops(|ops: &T| {
+        let fi = make_mut_unchecked(fi as *mut FileInfo);
+        match ops.create(CStr::from_ptr(path), mode, fi) {
             Ok(()) => 0,
             Err(errno) => -errno,
-        },
-    )
-}
-
-unsafe extern "C" fn lib_open<F: Operations>(
-    path: *const c_char,
-    fi: *mut fuse_file_info,
-) -> c_int {
-    debug_assert!(!fi.is_null());
-    let mut fi = NonNull::new_unchecked(fi).cast::<FileInfo>();
-    get_private_data(|fs: &F| match fs.open(CStr::from_ptr(path), fi.as_mut()) {
-        Ok(()) => 0,
-        Err(errno) => -errno,
+        }
     })
 }
 
-unsafe extern "C" fn lib_read<F: Operations>(
+unsafe extern "C" fn lib_open<T: Operations>(path: c_str, fi: *mut fuse_file_info) -> c_int {
+    call_with_ops(|ops: &T| {
+        let fi = make_mut_unchecked(fi as *mut FileInfo);
+        match ops.open(CStr::from_ptr(path), fi) {
+            Ok(()) => 0,
+            Err(errno) => -errno,
+        }
+    })
+}
+
+unsafe extern "C" fn lib_read<T: Operations>(
     path: c_str,
     buf: *mut c_char,
     size: usize,
     offset: off_t,
     fi: *mut fuse_file_info,
 ) -> c_int {
-    let path = CStr::from_ptr(path);
-    let buf = std::slice::from_raw_parts_mut(buf as *mut u8, size);
-    let mut fi = NonNull::new(fi).map(NonNull::cast::<FileInfo>);
-    get_private_data(
-        |fs: &F| match fs.read(path, buf, offset, fi.as_mut().map(|fi| fi.as_mut())) {
-            Ok(()) => 0,
+    call_with_ops(|ops: &T| {
+        let path = CStr::from_ptr(path);
+        let buf = slice::from_raw_parts_mut(buf as *mut u8, size);
+        let fi = make_mut(fi as *mut FileInfo);
+        match ops.read(path, buf, offset, fi) {
+            Ok(len) => len as c_int,
             Err(errno) => -errno,
-        },
-    )
+        }
+    })
 }
 
-unsafe extern "C" fn lib_write<F: Operations>(
+unsafe extern "C" fn lib_write<T: Operations>(
     path: c_str,
     buf: *const c_char,
     size: usize,
     offset: off_t,
     fi: *mut fuse_file_info,
 ) -> c_int {
-    let path = CStr::from_ptr(path);
-    let buf = std::slice::from_raw_parts(buf as *const u8, size);
-    let mut fi = NonNull::new(fi).map(NonNull::cast::<FileInfo>);
-    get_private_data(|fs: &F| {
-        match fs.write(path, buf, offset, fi.as_mut().map(|fi| fi.as_mut())) {
+    call_with_ops(|ops: &T| {
+        let path = CStr::from_ptr(path);
+        let buf = slice::from_raw_parts(buf as *const u8, size);
+        let fi = make_mut(fi as *mut FileInfo);
+        match ops.write(path, buf, offset, fi) {
+            Ok(len) => len as c_int,
+            Err(errno) => -errno,
+        }
+    })
+}
+
+unsafe extern "C" fn lib_statfs<T: Operations>(path: c_str, stbuf: *mut statvfs) -> c_int {
+    call_with_ops(|ops: &T| {
+        let stbuf = make_mut_unchecked(stbuf);
+        match ops.statfs(CStr::from_ptr(path), stbuf) {
             Ok(()) => 0,
             Err(errno) => -errno,
         }
     })
 }
 
-unsafe extern "C" fn lib_statfs<F: Operations>(path: c_str, stbuf: *mut statvfs) -> c_int {
-    debug_assert!(!stbuf.is_null());
-    let mut stbuf = NonNull::new_unchecked(stbuf);
-    get_private_data(
-        |fs: &F| match fs.statfs(CStr::from_ptr(path), stbuf.as_mut()) {
+unsafe extern "C" fn lib_release<T: Operations>(path: c_str, fi: *mut fuse_file_info) -> c_int {
+    call_with_ops(|ops: &T| {
+        let fi = make_mut_unchecked(fi as *mut FileInfo);
+        match ops.release(CStr::from_ptr(path), fi) {
             Ok(()) => 0,
             Err(errno) => -errno,
-        },
-    )
+        }
+    })
 }
 
-unsafe extern "C" fn lib_release<F: Operations>(path: c_str, fi: *mut fuse_file_info) -> c_int {
-    debug_assert!(!fi.is_null());
-    let mut fi = NonNull::new_unchecked(fi).cast::<FileInfo>();
-    get_private_data(
-        |fs: &F| match fs.release(CStr::from_ptr(path), fi.as_mut()) {
-            Ok(()) => 0,
-            Err(errno) => -errno,
-        },
-    )
-}
-
-unsafe extern "C" fn lib_fsync<F: Operations>(
+unsafe extern "C" fn lib_fsync<T: Operations>(
     path: c_str,
     isdatasync: c_int,
     fi: *mut fuse_file_info,
 ) -> c_int {
-    let mut fi = NonNull::new(fi).map(NonNull::cast::<FileInfo>);
-    get_private_data(|fs: &F| {
-        match fs.fsync(
-            CStr::from_ptr(path),
-            isdatasync,
-            fi.as_mut().map(|fi| fi.as_mut()),
-        ) {
+    call_with_ops(|ops: &T| {
+        let fi = make_mut(fi as *mut FileInfo);
+        match ops.fsync(CStr::from_ptr(path), isdatasync, fi) {
             Ok(()) => 0,
             Err(errno) => -errno,
         }
     })
 }
 
-unsafe extern "C" fn lib_fallocate<F: Operations>(
+unsafe extern "C" fn lib_fallocate<T: Operations>(
     path: c_str,
     mode: c_int,
     offset: off_t,
     length: off_t,
     fi: *mut fuse_file_info,
 ) -> c_int {
-    let mut fi = NonNull::new(fi).map(NonNull::cast::<FileInfo>);
-    get_private_data(|fs: &F| {
-        match fs.fallocate(
-            CStr::from_ptr(path),
-            mode,
-            offset,
-            length,
-            fi.as_mut().map(|fi| fi.as_mut()),
-        ) {
+    call_with_ops(|ops: &T| {
+        let fi = make_mut(fi as *mut FileInfo);
+        match ops.fallocate(CStr::from_ptr(path), mode, offset, length, fi) {
             Ok(()) => 0,
             Err(errno) => -errno,
         }
     })
 }
 
-unsafe extern "C" fn lib_setxattr<F: Operations>(
+unsafe extern "C" fn lib_setxattr<T: Operations>(
     path: c_str,
     name: c_str,
     value: *const c_char,
     size: usize,
     flags: c_int,
 ) -> c_int {
-    let value = std::slice::from_raw_parts(value as *const u8, size);
-    get_private_data(|fs: &F| {
-        match fs.setxattr(CStr::from_ptr(path), CStr::from_ptr(name), value, flags) {
+    call_with_ops(|ops: &T| {
+        let value = slice::from_raw_parts(value as *const u8, size);
+        match ops.setxattr(CStr::from_ptr(path), CStr::from_ptr(name), value, flags) {
             Ok(()) => 0,
             Err(errno) => -errno,
         }
     })
 }
 
-unsafe extern "C" fn lib_getxattr<F: Operations>(
+unsafe extern "C" fn lib_getxattr<T: Operations>(
     path: c_str,
     name: c_str,
     value: *mut c_char,
     size: usize,
 ) -> c_int {
-    let value = std::slice::from_raw_parts_mut(value as *mut u8, size);
-    get_private_data(|fs: &F| {
-        match fs.getxattr(CStr::from_ptr(path), CStr::from_ptr(name), value) {
+    call_with_ops(|ops: &T| {
+        let value = slice::from_raw_parts_mut(value as *mut u8, size);
+        match ops.getxattr(CStr::from_ptr(path), CStr::from_ptr(name), value) {
             Ok(()) => 0,
             Err(errno) => -errno,
         }
     })
 }
 
-unsafe extern "C" fn lib_listxattr<F: Operations>(
+unsafe extern "C" fn lib_listxattr<T: Operations>(
     path: c_str,
     list: *mut c_char,
     size: usize,
 ) -> c_int {
-    let list = std::slice::from_raw_parts_mut(list as *mut u8, size);
-    get_private_data(|fs: &F| match fs.listxattr(CStr::from_ptr(path), list) {
-        Ok(()) => 0,
-        Err(errno) => -errno,
+    call_with_ops(|ops: &T| {
+        let list = slice::from_raw_parts_mut(list as *mut u8, size);
+        match ops.listxattr(CStr::from_ptr(path), list) {
+            Ok(()) => 0,
+            Err(errno) => -errno,
+        }
     })
 }
 
-unsafe extern "C" fn lib_removexattr<F: Operations>(path: c_str, name: c_str) -> c_int {
-    get_private_data(
-        |fs: &F| match fs.removexattr(CStr::from_ptr(path), CStr::from_ptr(name)) {
+unsafe extern "C" fn lib_removexattr<T: Operations>(path: c_str, name: c_str) -> c_int {
+    call_with_ops(
+        |ops: &T| match ops.removexattr(CStr::from_ptr(path), CStr::from_ptr(name)) {
             Ok(()) => 0,
             Err(errno) => -errno,
         },
     )
 }
 
-unsafe extern "C" fn lib_copy_file_range<F: Operations>(
+unsafe extern "C" fn lib_copy_file_range<T: Operations>(
     path_in: c_str,
     fi_in: *mut fuse_file_info,
     offset_in: off_t,
@@ -675,15 +646,15 @@ unsafe extern "C" fn lib_copy_file_range<F: Operations>(
     len: usize,
     flags: c_int,
 ) -> isize {
-    let mut fi_in = NonNull::new(fi_in).map(NonNull::cast::<FileInfo>);
-    let mut fi_out = NonNull::new(fi_out).map(NonNull::cast::<FileInfo>);
-    get_private_data(|fs: &F| {
-        match fs.copy_file_range(
+    call_with_ops(|ops: &T| {
+        let fi_in = make_mut(fi_in as *mut FileInfo);
+        let fi_out = make_mut(fi_out as *mut FileInfo);
+        match ops.copy_file_range(
             CStr::from_ptr(path_in),
-            fi_in.as_mut().map(|fi| fi.as_mut()),
+            fi_in,
             offset_in,
             CStr::from_ptr(path_out),
-            fi_out.as_mut().map(|fi| fi.as_mut()),
+            fi_out,
             offset_out,
             len,
             flags,

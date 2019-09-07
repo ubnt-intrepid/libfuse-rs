@@ -38,6 +38,11 @@ impl Config {
         self
     }
 
+    pub fn kernel_cache(&mut self, enabled: bool) -> &mut Self {
+        self.0.kernel_cache = if enabled { 1 } else { 0 };
+        self
+    }
+
     pub fn entry_timeout(&mut self, timeout: c_double) -> &mut Self {
         self.0.entry_timeout = timeout;
         self

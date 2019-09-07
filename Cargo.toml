@@ -18,6 +18,9 @@ log = "0.4"
 nix = "0.15"
 pretty_env_logger = "0.2"
 
+[dev-dependencies]
+structopt = "0.3"
+
 [workspace]
 members = [
   "libfuse-sys",

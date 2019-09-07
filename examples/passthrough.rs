@@ -85,20 +85,17 @@ impl Operations for Filesystem {
         cfg.negative_timeout(0.0);
     }
 
-    fn destroy(&mut self) {
-        log::trace!("destroy()");
-    }
-
-    fn getattr(&self, path: &CStr, stbuf: &mut stat, _fi: Option<&mut FileInfo>) -> Result<()> {
+    fn getattr(&self, path: &CStr, _: Option<&mut FileInfo>) -> Result<stat> {
         let path = self.resolve_path(path);
         log::trace!("getattr(path={:?})", path);
 
-        let res = unsafe { libc::lstat(path.as_ptr(), stbuf) };
+        let mut stat = unsafe { std::mem::zeroed::<stat>() };
+        let res = unsafe { libc::lstat(path.as_ptr(), &mut stat) };
         if res == -1 {
             return Err(errno());
         }
 
-        Ok(())
+        Ok(stat)
     }
 
     fn access(&self, path: &CStr, mask: c_int) -> Result<()> {
@@ -342,7 +339,7 @@ impl Operations for Filesystem {
         buf: &mut [u8],
         offset: off_t,
         fi: Option<&mut FileInfo>,
-    ) -> Result<()> {
+    ) -> Result<usize> {
         let path = self.resolve_path(path);
         log::trace!("read(path={:?})", path);
 
@@ -368,7 +365,7 @@ impl Operations for Filesystem {
             return Err(errno());
         }
 
-        Ok(())
+        Ok(res as usize)
     }
 
     fn write(
@@ -377,7 +374,7 @@ impl Operations for Filesystem {
         buf: &[u8],
         offset: off_t,
         fi: Option<&mut FileInfo>,
-    ) -> Result<()> {
+    ) -> Result<usize> {
         let path = self.resolve_path(path);
         log::trace!("write(path={:?})", path);
 
@@ -403,7 +400,7 @@ impl Operations for Filesystem {
             return Err(errno());
         }
 
-        Ok(())
+        Ok(res as usize)
     }
 
     fn statfs(&self, path: &CStr, stbuf: &mut statvfs) -> Result<()> {
