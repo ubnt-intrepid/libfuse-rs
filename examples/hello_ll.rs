@@ -1,6 +1,6 @@
 use libc::{c_int, off_t, stat};
 use libfuse::{
-    ll::{OperationResult, Operations, Session},
+    ll::{DirOperations, FileOperations, OperationResult, Operations, Session},
     DirEntry, Ino,
 };
 use libfuse_sys::fuse_file_info;
@@ -29,6 +29,9 @@ fn main() {
 struct Hello;
 
 impl Operations for Hello {
+    type File = HelloFile;
+    type Dir = HelloDir;
+
     fn lookup(&mut self, parent: Ino, name: &CStr) -> OperationResult<DirEntry> {
         if parent != 1 {
             return Err(libc::ENOENT);
@@ -46,27 +49,38 @@ impl Operations for Hello {
         Ok(e)
     }
 
-    fn getattr(&mut self, ino: Ino, _: *mut fuse_file_info) -> OperationResult<(stat, f64)> {
+    fn getattr(&mut self, ino: Ino) -> OperationResult<(stat, f64)> {
         match hello_stat(ino) {
             Ok(stat) => Ok((stat, 1.0)),
             Err(_) => Err(libc::ENOENT),
         }
     }
 
-    fn open(&mut self, ino: Ino, fi: &mut fuse_file_info) -> OperationResult<()> {
+    fn open(&mut self, ino: Ino, fi: &mut fuse_file_info) -> OperationResult<Self::File> {
         match (ino, fi.flags & libc::O_ACCMODE) {
-            (2, libc::O_RDONLY) => Ok(()),
+            (2, libc::O_RDONLY) => Ok(HelloFile),
             (2, _) => Err(libc::EACCES),
             _ => Err(libc::EISDIR),
         }
     }
 
+    fn opendir(&mut self, _: Ino, _: &mut fuse_file_info) -> OperationResult<Self::Dir> {
+        Ok(HelloDir)
+    }
+}
+
+struct HelloFile;
+
+impl FileOperations for HelloFile {
+    type Ops = Hello;
+
     fn read(
         &mut self,
+        _: &mut Self::Ops,
         ino: Ino,
         buf: &mut [u8],
         off: off_t,
-        _: *mut fuse_file_info,
+        _: &mut fuse_file_info,
     ) -> OperationResult<usize> {
         debug_assert!(ino == 2);
         debug_assert!(off >= 0);
@@ -83,12 +97,18 @@ impl Operations for Hello {
 
         Ok(src.len())
     }
+}
+
+struct HelloDir;
+
+impl DirOperations for HelloDir {
+    type Ops = Hello;
 
     fn readdir(
         &mut self,
+        _: &mut Self::Ops,
         ino: Ino,
         buf: &mut libfuse::ll::DirBuf<'_>,
-        _: *mut fuse_file_info,
     ) -> OperationResult<()> {
         if ino != 1 {
             return Err(libc::ENOTDIR);
