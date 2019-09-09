@@ -1,55 +1,66 @@
-use bitflags::bitflags;
-use libc::{c_char, c_int, c_void, off_t, stat};
-use libfuse_sys::{fuse_fill_dir_flags, fuse_readdir_flags};
+use crate::{
+    common::Ino,
+    ops::{OperationResult, Operations},
+};
+use libc::{c_char, off_t, stat};
+use libfuse_sys::{fuse_add_direntry, fuse_req};
 use std::{ffi::CStr, ptr};
 
-type FillDirFn = unsafe extern "C" fn(
-    *mut c_void,
-    *const c_char,
-    *const stat,
-    off_t,
-    fuse_fill_dir_flags,
-) -> c_int;
+pub trait DirOperations: Sized {
+    type Ops: ?Sized + Operations<Dir = Self>;
 
-pub struct FillDir {
-    pub(crate) buf: *mut c_void,
-    pub(crate) filler: FillDirFn,
-}
-
-impl FillDir {
-    pub fn add(
+    /// Read a directory.
+    #[allow(unused_variables)]
+    fn readdir(
         &mut self,
-        name: &CStr,
-        stbuf: Option<&stat>,
-        off: off_t,
-        flags: FillDirFlags,
-    ) -> bool {
-        unsafe {
-            (self.filler)(
-                self.buf,
-                name.as_ptr(),
-                stbuf.map_or(ptr::null(), |s| s as *const _),
-                off,
-                flags.bits(),
-            ) == 1
+        ops: &mut Self::Ops,
+        ino: Ino,
+        offset: off_t,
+        buf: &mut DirBuf<'_>,
+    ) -> OperationResult<()> {
+        Err(libc::ENOSYS)
+    }
+
+    /// Release an opened directory.
+    #[allow(unused_variables)]
+    fn releasedir(&mut self, ops: &mut Self::Ops, ino: Ino) -> OperationResult<()> {
+        Err(libc::ENOSYS)
+    }
+}
+
+pub struct DirBuf<'a> {
+    pub(crate) req: &'a mut fuse_req,
+    pub(crate) buf: &'a mut [u8],
+    pub(crate) pos: usize,
+}
+
+impl<'a> DirBuf<'a> {
+    /// Add an directory entry to the send buffer.
+    ///
+    /// If the size of entry to be added is larger than the send buffer,
+    /// no entry is added and a `true` will be returned.
+    pub fn add(&mut self, name: &CStr, attr: &stat, offset: off_t) -> bool {
+        // calculate the length of new entry.
+        let new_entry_len = unsafe {
+            fuse_add_direntry(self.req, ptr::null_mut(), 0, name.as_ptr(), ptr::null(), 0)
+        };
+        if self.buf.len() < self.pos + new_entry_len {
+            return true;
         }
-    }
-}
 
-bitflags! {
-    pub struct FillDirFlags: fuse_fill_dir_flags {
-        const PLUS = libfuse_sys::fuse_fill_dir_flags_FUSE_FILL_DIR_PLUS;
-    }
-}
+        unsafe {
+            fuse_add_direntry(
+                self.req,
+                self.buf[self.pos..].as_mut_ptr() as *mut c_char,
+                self.buf.len() - self.pos,
+                name.as_ptr(),
+                attr,
+                offset,
+            );
+        }
 
-impl Default for FillDirFlags {
-    fn default() -> Self {
-        Self::empty()
-    }
-}
+        self.pos += new_entry_len;
 
-bitflags! {
-    pub struct ReadDirFlags: fuse_readdir_flags {
-        const PLUS = libfuse_sys::fuse_readdir_flags_FUSE_READDIR_PLUS;
+        false
     }
 }

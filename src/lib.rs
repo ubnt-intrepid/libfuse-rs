@@ -1,13 +1,17 @@
 //! A wrapper for libfuse.
 
+#![warn(clippy::unimplemented)]
+
 pub mod dir;
-pub mod ll;
+pub mod file;
+pub mod session;
 
 mod common;
-mod fuse;
 mod ops;
 mod util;
 
-pub use crate::common::{Config, ConnInfo, DirEntry, FileInfo, Ino};
-pub use crate::fuse::Fuse;
+pub use crate::common::{ConnectionInfo, Ino};
+pub use crate::dir::DirOperations;
+pub use crate::file::FileOperations;
 pub use crate::ops::{OperationResult, Operations};
+pub use crate::session::Session;

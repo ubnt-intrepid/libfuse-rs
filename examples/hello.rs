@@ -1,125 +1,150 @@
-use libc::{off_t, stat};
+use libc::{c_int, off_t, stat};
 use libfuse::{
-    dir::{FillDir, ReadDirFlags},
-    Config, ConnInfo, FileInfo, Fuse, OperationResult, Operations,
+    dir::DirBuf, file::Entry, DirOperations, FileOperations, Ino, OperationResult, Operations,
+    Session,
 };
-use std::ffi::{CStr, CString};
-use structopt::StructOpt;
+use libfuse_sys::fuse_file_info;
+use std::{
+    env,
+    ffi::{CStr, CString},
+    mem,
+    path::PathBuf,
+};
 
-#[derive(Debug, StructOpt)]
-struct Args {
-    #[structopt(short = "f", long = "filename", default_value = "hello")]
-    filename: String,
-
-    #[structopt(short = "c", long = "contents", default_value = "Hello, World!\n")]
-    contents: String,
-
-    #[structopt(name = "mountpoint")]
-    mountpoint: String,
-}
+const HELLO_STR: &str = "Hello World!\n";
+const HELLO_NAME: &str = "hello";
 
 fn main() {
-    std::env::set_var("RUST_LOG", "trace");
-    pretty_env_logger::init();
+    let mountpoint = env::args()
+        .nth(1)
+        .map(PathBuf::from)
+        .expect("requires the mountpoint path");
 
-    let args = Args::from_args();
-    let hello = Hello {
-        filename: CString::new(args.filename).unwrap(),
-        contents: args.contents,
-    };
+    let session = Session::builder("hello")
+        .debug(true)
+        .set_signal_handlers(true)
+        .build(Hello)
+        .expect("failed to start fuse session");
 
-    Fuse::new("hello")
-        .foreground(true)
-        .threaded(false)
-        .mount(args.mountpoint, hello)
+    session
+        .run(&mountpoint)
+        .expect("error during the session loop");
 }
 
-struct Hello {
-    filename: CString,
-    contents: String,
-}
+struct Hello;
 
 impl Operations for Hello {
-    fn init(&mut self, _: &mut ConnInfo, cfg: &mut Config) {
-        log::trace!("Hello::init()");
-        cfg.kernel_cache(true);
-    }
+    type File = HelloFile;
+    type Dir = HelloDir;
 
-    fn getattr(&self, path: &CStr, _: Option<&mut FileInfo>) -> OperationResult<stat> {
-        log::trace!("Hello::getattr(path={:?})", path);
+    fn lookup(&mut self, parent: Ino, name: &CStr) -> OperationResult<Entry> {
+        if parent != 1 {
+            return Err(libc::ENOENT);
+        }
 
-        let mut stat = unsafe { std::mem::zeroed::<stat>() };
-        match path.to_bytes() {
-            b"/" => {
-                stat.st_mode = libc::S_IFDIR | 0755;
-                stat.st_nlink = 2;
-            }
-            path if path[1..] == *self.filename.as_bytes() => {
-                stat.st_mode = libc::S_IFREG | 0444;
-                stat.st_nlink = 1;
-                stat.st_size = self.contents.as_bytes().len() as i64;
-            }
+        match name.to_str() {
+            Ok(HELLO_NAME) => (),
             _ => return Err(libc::ENOENT),
         }
-        Ok(stat)
+
+        let e = Entry::new(2)
+            .attr(hello_stat(2)?)
+            .attr_timeout(1.0)
+            .entry_timeout(1.0);
+        Ok(e)
     }
 
-    fn readdir(
-        &self,
-        path: &CStr,
-        filler: &mut FillDir,
-        _: off_t,
-        _: Option<&mut FileInfo>,
-        _: ReadDirFlags,
-    ) -> OperationResult<()> {
-        log::trace!("Hello::readdir(path={:?})", path);
-        if path.to_bytes() != b"/" {
-            return Err(libc::ENOENT);
-        }
-
-        filler.add(&*CString::new(".").unwrap(), None, 0, Default::default());
-        filler.add(&*CString::new("..").unwrap(), None, 0, Default::default());
-        filler.add(&*self.filename, None, 0, Default::default());
-
-        Ok(())
-    }
-
-    fn open(&self, path: &CStr, fi: &mut FileInfo) -> OperationResult<()> {
-        log::trace!("Hello::open(path={:?})", path);
-        if path.to_bytes()[1..] != *self.filename.to_bytes() {
-            return Err(libc::ENOENT);
-        }
-        match fi.flags() & libc::O_ACCMODE {
-            libc::O_RDONLY => Ok(()),
-            _ => Err(libc::EACCES),
+    fn getattr(&mut self, ino: Ino) -> OperationResult<(stat, f64)> {
+        match hello_stat(ino) {
+            Ok(stat) => Ok((stat, 1.0)),
+            Err(_) => Err(libc::ENOENT),
         }
     }
+
+    fn open(&mut self, ino: Ino, fi: &mut fuse_file_info) -> OperationResult<Self::File> {
+        match (ino, fi.flags & libc::O_ACCMODE) {
+            (2, libc::O_RDONLY) => Ok(HelloFile),
+            (2, _) => Err(libc::EACCES),
+            _ => Err(libc::EISDIR),
+        }
+    }
+
+    fn opendir(&mut self, _: Ino, _: &mut fuse_file_info) -> OperationResult<Self::Dir> {
+        Ok(HelloDir)
+    }
+}
+
+struct HelloFile;
+
+impl FileOperations for HelloFile {
+    type Ops = Hello;
 
     fn read(
-        &self,
-        path: &CStr,
+        &mut self,
+        _: &mut Self::Ops,
+        ino: Ino,
         buf: &mut [u8],
-        offset: off_t,
-        _: Option<&mut FileInfo>,
+        off: off_t,
+        _: &mut fuse_file_info,
     ) -> OperationResult<usize> {
-        log::trace!("Hello::read(path={:?})", path);
+        debug_assert!(ino == 2);
+        debug_assert!(off >= 0);
+        let off = off as usize;
 
-        debug_assert!(offset >= 0);
-        let offset = offset as usize;
-
-        if path.to_bytes()[1..] != *self.filename.to_bytes() {
-            return Err(libc::ENOENT);
-        }
-
-        if offset >= self.contents.len() {
-            log::debug!("the content has already been read");
+        if off > HELLO_STR.len() {
             return Ok(0);
         }
 
-        let contents = self.contents[offset..].as_bytes();
-        let len = std::cmp::min(buf.len(), contents.len());
-        buf[..len].copy_from_slice(&contents[..len]);
+        let to_be_read = std::cmp::min(buf.len(), HELLO_STR.len() - off);
 
-        Ok(len)
+        let src = HELLO_STR[off..off + to_be_read].as_bytes();
+        buf[..to_be_read].copy_from_slice(src);
+
+        Ok(src.len())
     }
+}
+
+struct HelloDir;
+
+impl DirOperations for HelloDir {
+    type Ops = Hello;
+
+    fn readdir(
+        &mut self,
+        _: &mut Self::Ops,
+        ino: Ino,
+        offset: off_t,
+        buf: &mut DirBuf<'_>,
+    ) -> OperationResult<()> {
+        if ino != 1 {
+            return Err(libc::ENOTDIR);
+        }
+
+        if offset == 0 {
+            let name = CString::new(HELLO_NAME).expect("valid filename");
+            let attr = hello_stat(2)?;
+            let hello_offset = 1;
+            buf.add(&*name, &attr, hello_offset);
+        }
+
+        Ok(())
+    }
+}
+
+fn hello_stat(ino: Ino) -> Result<stat, c_int> {
+    let mut stbuf = unsafe { mem::zeroed::<stat>() };
+    stbuf.st_ino = ino;
+    match ino {
+        1 => {
+            stbuf.st_mode = libc::S_IFDIR | 0755;
+            stbuf.st_nlink = 2;
+        }
+        2 => {
+            stbuf.st_mode = libc::S_IFREG | 0444;
+            stbuf.st_nlink = 1;
+            stbuf.st_size = HELLO_STR.len() as i64;
+        }
+        _ => return Err(libc::ENOENT),
+    }
+    Ok(stbuf)
 }

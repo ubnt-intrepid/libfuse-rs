@@ -5,10 +5,10 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "example-hello-ll",
+            "name": "example-hello",
             "type": "gdb",
             "request": "launch",
-            "target": "./target/debug/examples/hello_ll",
+            "target": "./target/debug/examples/hello",
             "arguments": "/tmp/mountpoint",
             "cwd": "${workspaceRoot}",
             "valuesFormatting": "parseText"
