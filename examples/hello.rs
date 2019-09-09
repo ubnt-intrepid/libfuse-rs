@@ -47,10 +47,11 @@ impl Operations for Hello {
             _ => return Err(libc::ENOENT),
         }
 
-        let e = Entry::new(2)
-            .attr(hello_stat(2)?)
-            .attr_timeout(1.0)
-            .entry_timeout(1.0);
+        let mut e = Entry::default();
+        e.ino(2);
+        e.attr(hello_stat(2)?);
+        e.attr_timeout(1.0);
+        e.entry_timeout(1.0);
         Ok(e)
     }
 

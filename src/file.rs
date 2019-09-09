@@ -67,33 +67,43 @@ pub trait FileOperations: Sized {
 
 pub struct Entry(pub(crate) fuse_entry_param);
 
+impl Default for Entry {
+    fn default() -> Self {
+        Self(unsafe { std::mem::zeroed() })
+    }
+}
+
 impl Entry {
-    /// Create a new `DirEntry` with the specified inode number.
-    pub fn new(ino: Ino) -> Self {
-        let mut entry: fuse_entry_param = unsafe { std::mem::zeroed() };
-        entry.ino = ino;
-        Self(entry)
+    /// Create a new `Entry`.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Sets the inode number for this entry.
+    pub fn ino(&mut self, ino: Ino) -> &mut Self {
+        self.0.ino = ino;
+        self
     }
 
     /// Sets the generation number for this entry.
-    pub fn generation(mut self, gen: u64) -> Self {
+    pub fn generation(&mut self, gen: u64) -> &mut Self {
         self.0.generation = gen;
         self
     }
 
     /// Sets the attributes associated with this entry.
-    pub fn attr(mut self, attr: stat) -> Self {
+    pub fn attr(&mut self, attr: stat) -> &mut Self {
         self.0.attr = attr;
         self
     }
 
     ///
-    pub fn attr_timeout(mut self, timeout: f64) -> Self {
+    pub fn attr_timeout(&mut self, timeout: f64) -> &mut Self {
         self.0.attr_timeout = timeout;
         self
     }
 
-    pub fn entry_timeout(mut self, timeout: f64) -> Self {
+    pub fn entry_timeout(&mut self, timeout: f64) -> &mut Self {
         self.0.entry_timeout = timeout;
         self
     }
