@@ -1,32 +1,6 @@
-use crate::{
-    common::Ino,
-    ops::{OperationResult, Operations},
-};
 use libc::{c_char, off_t, stat};
 use libfuse_sys::{fuse_add_direntry, fuse_file_info, fuse_req};
 use std::{ffi::CStr, ptr};
-
-pub trait DirOperations: Sized {
-    type Ops: ?Sized + Operations<Dir = Self>;
-
-    /// Read a directory.
-    #[allow(unused_variables)]
-    fn readdir(
-        &mut self,
-        ops: &mut Self::Ops,
-        ino: Ino,
-        offset: off_t,
-        buf: &mut DirBuf<'_>,
-    ) -> OperationResult<()> {
-        Err(libc::ENOSYS)
-    }
-
-    /// Release an opened directory.
-    #[allow(unused_variables)]
-    fn releasedir(&mut self, ops: &mut Self::Ops, ino: Ino) -> OperationResult<()> {
-        Err(libc::ENOSYS)
-    }
-}
 
 pub struct DirBuf<'a> {
     pub(crate) req: &'a mut fuse_req,

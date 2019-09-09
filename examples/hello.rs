@@ -1,8 +1,8 @@
 use libc::{c_int, off_t, stat};
 use libfuse::{
-    dir::{DirBuf, OpenOptions as DirOpenOptions},
+    dir::DirBuf,
     file::{Entry, OpenOptions},
-    DirOperations, FileOperations, Ino, OperationResult, Operations, Session,
+    Ino, OperationResult, Operations, Session,
 };
 use libfuse_sys::fuse_file_info;
 use std::{
@@ -35,8 +35,8 @@ fn main() {
 struct Hello;
 
 impl Operations for Hello {
-    type File = HelloFile;
-    type Dir = HelloDir;
+    type File = ();
+    type Dir = ();
 
     fn lookup(&mut self, parent: Ino, name: &CStr) -> OperationResult<Entry> {
         if parent != 1 {
@@ -56,38 +56,33 @@ impl Operations for Hello {
         Ok(e)
     }
 
-    fn getattr(&mut self, ino: Ino) -> OperationResult<(stat, f64)> {
+    fn getattr(&mut self, ino: Ino, _: Option<&mut Self::File>) -> OperationResult<(stat, f64)> {
         match hello_stat(ino) {
             Ok(stat) => Ok((stat, 1.0)),
             Err(_) => Err(libc::ENOENT),
         }
     }
 
-    fn open(&mut self, ino: Ino, flags: c_int, _: &mut OpenOptions) -> OperationResult<Self::File> {
+    fn open(
+        &mut self,
+        ino: Ino,
+        flags: c_int,
+        _: &mut OpenOptions,
+    ) -> OperationResult<Option<Self::File>> {
         match (ino, flags & libc::O_ACCMODE) {
-            (2, libc::O_RDONLY) => Ok(HelloFile),
+            (2, libc::O_RDONLY) => Ok(None),
             (2, _) => Err(libc::EACCES),
             _ => Err(libc::EISDIR),
         }
     }
 
-    fn opendir(&mut self, _: Ino, _: &mut DirOpenOptions) -> OperationResult<Self::Dir> {
-        Ok(HelloDir)
-    }
-}
-
-struct HelloFile;
-
-impl FileOperations for HelloFile {
-    type Ops = Hello;
-
     fn read(
         &mut self,
-        _: &mut Self::Ops,
         ino: Ino,
         buf: &mut [u8],
         off: off_t,
         _: &mut fuse_file_info,
+        _: Option<&mut Self::File>,
     ) -> OperationResult<usize> {
         debug_assert!(ino == 2);
         debug_assert!(off >= 0);
@@ -104,19 +99,13 @@ impl FileOperations for HelloFile {
 
         Ok(src.len())
     }
-}
-
-struct HelloDir;
-
-impl DirOperations for HelloDir {
-    type Ops = Hello;
 
     fn readdir(
         &mut self,
-        _: &mut Self::Ops,
         ino: Ino,
         offset: off_t,
         buf: &mut DirBuf<'_>,
+        _: Option<&mut Self::File>,
     ) -> OperationResult<()> {
         if ino != 1 {
             return Err(libc::ENOTDIR);
