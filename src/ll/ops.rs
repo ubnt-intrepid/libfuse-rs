@@ -215,6 +215,7 @@ pub trait DirOperations: Sized {
         &mut self,
         ops: &mut Self::Ops,
         ino: Ino,
+        offset: off_t,
         buf: &mut DirBuf<'_>,
     ) -> OperationResult<()> {
         Err(libc::ENOSYS)
@@ -475,7 +476,10 @@ unsafe extern "C" fn ops_read<T: Operations>(
         match file.read(ops, ino, &mut buf[..], off, fi) {
             Ok(size) => {
                 let out = &buf[..size];
-                fuse_reply_buf(req, out.as_ptr() as *const c_char, out.len())
+                match out.len() {
+                    0 => fuse_reply_buf(req, ptr::null_mut(), 0),
+                    n => fuse_reply_buf(req, out.as_ptr() as *const c_char, n),
+                }
             }
             Err(errno) => fuse_reply_err(req, errno),
         }
@@ -584,25 +588,27 @@ unsafe extern "C" fn ops_readdir<T: Operations>(
     call_with_ops(req, |ops: &mut T, req| {
         let fi = make_mut_unchecked(fi);
         let dir = make_mut_unchecked(fi.fh as *mut c_void as *mut T::Dir);
-        let mut buf = DirBuf {
+        let mut buf = Vec::with_capacity(size);
+        buf.set_len(size);
+
+        let mut dir_buf = DirBuf {
             req: &mut *req,
-            p: ptr::null_mut(),
-            size: 0,
-            offset,
+            buf: &mut buf[..],
+            pos: 0,
         };
-        match dir.readdir(ops, ino, &mut buf) {
+
+        let res = dir.readdir(ops, ino, offset, &mut dir_buf);
+        let DirBuf { pos, .. } = dir_buf;
+
+        match res {
             Ok(()) => {
-                if (offset as usize) <= buf.size {
-                    fuse_reply_buf(
-                        buf.req,
-                        buf.p.offset(offset as isize),
-                        std::cmp::min(buf.size - offset as usize, size),
-                    )
-                } else {
-                    fuse_reply_buf(buf.req, ptr::null(), 0)
+                let out = &buf[..pos];
+                match out.len() {
+                    0 => fuse_reply_buf(req, ptr::null_mut(), 0),
+                    n => fuse_reply_buf(req, out.as_ptr() as *const c_char, n),
                 }
             }
-            Err(errno) => fuse_reply_err(buf.req, errno),
+            Err(errno) => fuse_reply_err(req, errno),
         }
     })
 }
@@ -626,44 +632,37 @@ unsafe extern "C" fn ops_releasedir<T: Operations>(
 
 pub struct DirBuf<'a> {
     req: &'a mut fuse_req,
-    p: *mut c_char,
-    size: usize,
-    #[allow(dead_code)]
-    offset: off_t,
-}
-
-impl<'a> Drop for DirBuf<'a> {
-    fn drop(&mut self) {
-        unsafe {
-            if !self.p.is_null() {
-                libc::free(self.p as *mut _);
-            }
-            self.p = ptr::null_mut();
-        }
-    }
+    buf: &'a mut [u8],
+    pos: usize,
 }
 
 impl<'a> DirBuf<'a> {
-    pub fn add(&mut self, name: &str, ino: fuse_ino_t) {
-        let name = CString::new(name).unwrap();
-        let oldsize = self.size;
-        self.size += unsafe {
+    /// Add an directory entry to the send buffer.
+    ///
+    /// If the size of entry to be added is larger than the send buffer,
+    /// no entry is added and a `true` will be returned.
+    pub fn add(&mut self, name: &CStr, attr: &stat, offset: off_t) -> bool {
+        // calculate the length of new entry.
+        let new_entry_len = unsafe {
             fuse_add_direntry(self.req, ptr::null_mut(), 0, name.as_ptr(), ptr::null(), 0)
         };
-        self.p = unsafe { libc::realloc(self.p as *mut _, self.size) as *mut c_char };
-
-        let mut stbuf = unsafe { mem::zeroed::<stat>() };
-        stbuf.st_ino = ino;
+        if self.buf.len() < self.pos + new_entry_len {
+            return true;
+        }
 
         unsafe {
             fuse_add_direntry(
                 self.req,
-                self.p.offset(oldsize as isize),
-                self.size - oldsize,
+                self.buf[self.pos..].as_mut_ptr() as *mut c_char,
+                self.buf.len() - self.pos,
                 name.as_ptr(),
-                &stbuf,
-                self.size as i64,
+                attr,
+                offset,
             );
         }
+
+        self.pos += new_entry_len;
+
+        false
     }
 }

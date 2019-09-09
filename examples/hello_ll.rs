@@ -4,7 +4,12 @@ use libfuse::{
     DirEntry, Ino,
 };
 use libfuse_sys::fuse_file_info;
-use std::{env, ffi::CStr, mem, path::PathBuf};
+use std::{
+    env,
+    ffi::{CStr, CString},
+    mem,
+    path::PathBuf,
+};
 
 const HELLO_STR: &str = "Hello World!\n";
 const HELLO_NAME: &str = "hello";
@@ -108,15 +113,19 @@ impl DirOperations for HelloDir {
         &mut self,
         _: &mut Self::Ops,
         ino: Ino,
+        offset: off_t,
         buf: &mut libfuse::ll::DirBuf<'_>,
     ) -> OperationResult<()> {
         if ino != 1 {
             return Err(libc::ENOTDIR);
         }
 
-        buf.add(".", 1);
-        buf.add("..", 1);
-        buf.add(HELLO_NAME, 2);
+        if offset == 0 {
+            let name = CString::new(HELLO_NAME).expect("valid filename");
+            let attr = hello_stat(2)?;
+            let hello_offset = 1;
+            buf.add(&*name, &attr, hello_offset);
+        }
 
         Ok(())
     }
