@@ -1,0 +1,27 @@
+image: "rust:latest"
+
+stages:
+  - test
+  - doc
+
+before_script:
+  - apt-get update -yqq
+  - apt-get install -yqq --no-install-recommends build-essential llvm-dev libclang-dev clang
+
+test:
+  stage: test
+  script:
+    - rustc --version && cargo --version
+    - cargo test --all --verbose
+
+pages:
+  stage: doc
+  script:
+    - cargo doc --all
+    - mv target/doc public
+    - echo '<meta http-equiv="refresh" content="0;url=libfuse">' > public/index.html
+  artifacts:
+    paths:
+      - public
+  only:
+    - master
