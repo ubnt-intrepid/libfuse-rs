@@ -1,7 +1,7 @@
 use crate::{
     common::{ConnectionInfo, Ino},
-    dir::{DirBuf, DirOperations},
-    file::{Entry, FileOperations},
+    dir::{DirBuf, DirOperations, OpenOptions as DirOpenOptions},
+    file::{Entry, FileOperations, OpenOptions},
     util::*,
 };
 use libc::{c_char, c_int, c_uint, c_void, dev_t, mode_t, off_t, stat};
@@ -124,7 +124,12 @@ pub trait Operations {
 
     /// Open a file.
     #[allow(unused_variables)]
-    fn open(&mut self, ino: Ino, fi: &mut fuse_file_info) -> OperationResult<Self::File> {
+    fn open(
+        &mut self,
+        ino: Ino,
+        flags: c_int,
+        options: &mut OpenOptions,
+    ) -> OperationResult<Self::File> {
         Err(libc::ENOSYS)
     }
 
@@ -135,14 +140,15 @@ pub trait Operations {
         parent: Ino,
         name: &CStr,
         mode: mode_t,
-        fi: &mut fuse_file_info,
+        flags: c_int,
+        options: &mut OpenOptions,
     ) -> OperationResult<(Self::File, Entry)> {
         Err(libc::ENOSYS)
     }
 
     /// Open a directory.
     #[allow(unused_variables)]
-    fn opendir(&mut self, ino: Ino, fi: &mut fuse_file_info) -> OperationResult<Self::Dir> {
+    fn opendir(&mut self, ino: Ino, options: &mut DirOpenOptions) -> OperationResult<Self::Dir> {
         Err(libc::ENOSYS)
     }
 }
@@ -351,9 +357,11 @@ unsafe extern "C" fn ops_open<T: Operations>(
 ) {
     call_with_ops(req, |ops: &mut T, req| {
         let fi = make_mut_unchecked(fi);
-        match ops.open(ino, fi) {
+        let mut options = OpenOptions::default();
+        match ops.open(ino, fi.flags, &mut options) {
             Ok(file) => {
                 fi.fh = into_fh(file);
+                options.assign_to(fi);
                 fuse_reply_open(req, fi)
             }
             Err(errno) => fuse_reply_err(req, errno),
@@ -370,9 +378,11 @@ unsafe extern "C" fn ops_create<T: Operations>(
 ) {
     call_with_ops(req, |ops: &mut T, req| {
         let fi = make_mut_unchecked(fi);
-        match ops.create(parent, CStr::from_ptr(name), mode, fi) {
+        let mut options = OpenOptions::default();
+        match ops.create(parent, CStr::from_ptr(name), mode, fi.flags, &mut options) {
             Ok((file, Entry(entry))) => {
                 fi.fh = into_fh(file);
+                options.assign_to(fi);
                 fuse_reply_create(req, &entry, fi)
             }
             Err(errno) => fuse_reply_err(req, errno),
@@ -486,10 +496,12 @@ unsafe extern "C" fn ops_opendir<T: Operations>(
 ) {
     call_with_ops(req, |ops: &mut T, req| {
         let fi = make_mut_unchecked(fi);
-        match ops.opendir(ino, fi) {
+        let mut options = DirOpenOptions::default();
+        match ops.opendir(ino, &mut options) {
             Ok(dir) => {
                 // FIXME: avoid to use boxing.
                 fi.fh = into_fh(dir);
+                options.assign_to(fi);
                 fuse_reply_open(req, fi)
             }
             Err(errno) => fuse_reply_err(req, errno),

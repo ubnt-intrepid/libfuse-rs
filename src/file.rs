@@ -108,3 +108,33 @@ impl Entry {
         self
     }
 }
+
+#[derive(Default)]
+pub struct OpenOptions {
+    direct_io: bool,
+    keep_cache: bool,
+    nonseekable: bool,
+}
+
+impl OpenOptions {
+    pub fn direct_io(&mut self, enabled: bool) -> &mut Self {
+        self.direct_io = enabled;
+        self
+    }
+
+    pub fn keep_cache(&mut self, enabled: bool) -> &mut Self {
+        self.keep_cache = enabled;
+        self
+    }
+
+    pub fn nonseekable(&mut self, enabled: bool) -> &mut Self {
+        self.nonseekable = enabled;
+        self
+    }
+
+    pub(crate) fn assign_to(&self, fi: &mut fuse_file_info) {
+        fi.set_direct_io(if self.direct_io { 1 } else { 0 });
+        fi.set_keep_cache(if self.keep_cache { 1 } else { 0 });
+        fi.set_nonseekable(if self.nonseekable { 1 } else { 0 });
+    }
+}

@@ -1,7 +1,8 @@
 use libc::{c_int, off_t, stat};
 use libfuse::{
-    dir::DirBuf, file::Entry, DirOperations, FileOperations, Ino, OperationResult, Operations,
-    Session,
+    dir::{DirBuf, OpenOptions as DirOpenOptions},
+    file::{Entry, OpenOptions},
+    DirOperations, FileOperations, Ino, OperationResult, Operations, Session,
 };
 use libfuse_sys::fuse_file_info;
 use std::{
@@ -62,15 +63,15 @@ impl Operations for Hello {
         }
     }
 
-    fn open(&mut self, ino: Ino, fi: &mut fuse_file_info) -> OperationResult<Self::File> {
-        match (ino, fi.flags & libc::O_ACCMODE) {
+    fn open(&mut self, ino: Ino, flags: c_int, _: &mut OpenOptions) -> OperationResult<Self::File> {
+        match (ino, flags & libc::O_ACCMODE) {
             (2, libc::O_RDONLY) => Ok(HelloFile),
             (2, _) => Err(libc::EACCES),
             _ => Err(libc::EISDIR),
         }
     }
 
-    fn opendir(&mut self, _: Ino, _: &mut fuse_file_info) -> OperationResult<Self::Dir> {
+    fn opendir(&mut self, _: Ino, _: &mut DirOpenOptions) -> OperationResult<Self::Dir> {
         Ok(HelloDir)
     }
 }

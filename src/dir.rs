@@ -3,7 +3,7 @@ use crate::{
     ops::{OperationResult, Operations},
 };
 use libc::{c_char, off_t, stat};
-use libfuse_sys::{fuse_add_direntry, fuse_req};
+use libfuse_sys::{fuse_add_direntry, fuse_file_info, fuse_req};
 use std::{ffi::CStr, ptr};
 
 pub trait DirOperations: Sized {
@@ -62,5 +62,21 @@ impl<'a> DirBuf<'a> {
         self.pos += new_entry_len;
 
         false
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct OpenOptions {
+    cache_readdir: bool,
+}
+
+impl OpenOptions {
+    pub fn cache_readdir(&mut self, enabled: bool) -> &mut Self {
+        self.cache_readdir = enabled;
+        self
+    }
+
+    pub(crate) fn assign_to(&self, fi: &mut fuse_file_info) {
+        fi.set_cache_readdir(if self.cache_readdir { 1 } else { 0 });
     }
 }
