@@ -1,7 +1,9 @@
 image: "rust:latest"
 
 variables:
+  CARGO_TERM_VERBOSE: true
   GIT_SUBMODULE_STRATEGY: normal
+  RUST_BACKTRACE: full
 
 stages:
   - test
@@ -9,18 +11,18 @@ stages:
 
 before_script:
   - apt-get update -yqq
-  - apt-get install -yqq --no-install-recommends build-essential llvm-dev libclang-dev clang meson ninja-build
+  - apt-get install -yqq --no-install-recommends build-essential pkg-config llvm-dev libclang-dev clang meson ninja-build
 
 test:
   stage: test
   script:
-    - rustc --version && cargo --version
+    - rustc --version && cargo --version && clang --version && meson --version && ninja --version
     - cargo test --all --verbose
 
 pages:
   stage: doc
   script:
-    - cargo doc --all
+    - cargo doc --all --verbose
     - mv target/doc public
     - echo '<meta http-equiv="refresh" content="0;url=libfuse">' > public/index.html
   artifacts:
