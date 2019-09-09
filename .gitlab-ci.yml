@@ -1,7 +1,7 @@
 image: "rust:latest"
 
 variables:
-  CARGO_TERM_VERBOSE: true
+  CARGO_TERM_VERBOSE: 'true'
   GIT_SUBMODULE_STRATEGY: normal
   RUST_BACKTRACE: full
 
