@@ -9,7 +9,7 @@ stages:
 
 before_script:
   - apt-get update -yqq
-  - apt-get install -yqq --no-install-recommends build-essential llvm-dev libclang-dev clang
+  - apt-get install -yqq --no-install-recommends build-essential llvm-dev libclang-dev clang meson ninja
 
 test:
   stage: test
