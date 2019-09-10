@@ -21,15 +21,14 @@ fn main() {
         .map(PathBuf::from)
         .expect("requires the mountpoint path");
 
-    let session = Session::builder("hello")
+    let mut session = Session::builder("hello")
         .debug(true)
-        .set_signal_handlers(true)
         .build(Hello)
         .expect("failed to start fuse session");
 
-    session
-        .run(&mountpoint)
-        .expect("error during the session loop");
+    session.set_signal_handlers().unwrap();
+    session.mount(&mountpoint).unwrap();
+    session.run_loop().unwrap();
 }
 
 struct Hello;

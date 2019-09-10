@@ -16,13 +16,18 @@ use libfuse_sys::{
     fuse_session_unmount,
     fuse_set_signal_handlers,
 };
-use std::{ffi::CString, io, mem, os::unix::ffi::OsStrExt, path::Path, ptr::NonNull};
+use std::{
+    ffi::CString,
+    io, mem,
+    os::unix::ffi::OsStrExt,
+    path::{Path, PathBuf},
+    ptr::NonNull,
+};
 
 #[derive(Debug)]
 pub struct Builder {
     fsname: String,
     debug: bool,
-    set_signal_handlers: bool,
 }
 
 impl Builder {
@@ -30,17 +35,11 @@ impl Builder {
         Self {
             fsname: fsname.into(),
             debug: false,
-            set_signal_handlers: false,
         }
     }
 
     pub fn debug(mut self, enabled: bool) -> Self {
         self.debug = enabled;
-        self
-    }
-
-    pub fn set_signal_handlers(mut self, enabled: bool) -> Self {
-        self.set_signal_handlers = enabled;
         self
     }
 
@@ -72,17 +71,12 @@ impl Builder {
             return Err(io::ErrorKind::Other.into());
         }
 
-        let mut session = Session {
+        Ok(Session {
             se: unsafe { NonNull::new_unchecked(se) },
             args: fargs,
             set_signal_handlers: false,
-        };
-
-        if self.set_signal_handlers {
-            session.set_signal_handlers()?;
-        }
-
-        Ok(session)
+            mountpoint: None,
+        })
     }
 }
 
@@ -90,6 +84,7 @@ pub struct Session {
     se: NonNull<fuse_session>,
     args: fuse_args,
     set_signal_handlers: bool,
+    mountpoint: Option<PathBuf>,
 }
 
 impl Session {
@@ -118,21 +113,39 @@ impl Session {
         self.set_signal_handlers = false;
     }
 
-    pub fn run(self, mountpoint: &Path) -> io::Result<()> {
+    pub fn mount(&mut self, mountpoint: &Path) -> io::Result<()> {
         let c_mountpoint = CString::new(mountpoint.as_os_str().as_bytes())?;
+        if unsafe { fuse_session_mount(self.se.as_ptr(), c_mountpoint.as_ptr()) } != 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                format!("failed to mount to the specified path: {:?}", mountpoint),
+            ));
+        }
+        self.mountpoint = Some(mountpoint.into());
+        Ok(())
+    }
 
+    pub fn unmount(&mut self) {
         unsafe {
-            if fuse_session_mount(self.se.as_ptr(), c_mountpoint.as_ptr()) != 0 {
-                return Err(io::Error::new(
-                    io::ErrorKind::Other,
-                    format!("failed to mount to the specified path: {:?}", mountpoint),
-                ));
+            if let Some(_) = self.mountpoint.take() {
+                fuse_session_unmount(self.se.as_ptr());
             }
+        }
+    }
 
-            // Block until ctrl+c or fusermount -u
-            let mut fbuf = mem::zeroed::<fuse_buf>();
+    pub fn run_loop(&mut self) -> io::Result<()> {
+        if self.mountpoint.is_none() {
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                "The session has not mounted yet.",
+            ));
+        }
+
+        // Block until ctrl+c or fusermount -u
+        unsafe {
+            let mut buf = Buf(mem::zeroed());
             while fuse_session_exited(self.se.as_ptr()) == 0 {
-                let res = fuse_session_receive_buf(self.se.as_ptr(), &mut fbuf);
+                let res = fuse_session_receive_buf(self.se.as_ptr(), &mut buf.0);
                 if res == -libc::EINTR {
                     continue;
                 }
@@ -140,13 +153,10 @@ impl Session {
                     break;
                 }
 
-                fuse_session_process_buf(self.se.as_ptr(), &fbuf);
+                fuse_session_process_buf(self.se.as_ptr(), &buf.0);
             }
 
-            libc::free(fbuf.mem);
             fuse_session_reset(self.se.as_ptr());
-
-            fuse_session_unmount(self.se.as_ptr());
         }
 
         Ok(())
@@ -155,10 +165,23 @@ impl Session {
 
 impl Drop for Session {
     fn drop(&mut self) {
+        self.unmount();
         self.remove_signal_handlers();
         unsafe {
             fuse_session_destroy(self.se.as_ptr());
             fuse_opt_free_args(&mut self.args);
+        }
+    }
+}
+
+struct Buf(fuse_buf);
+
+impl Drop for Buf {
+    fn drop(&mut self) {
+        unsafe {
+            if !self.0.mem.is_null() {
+                libc::free(self.0.mem);
+            }
         }
     }
 }
