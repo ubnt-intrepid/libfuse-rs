@@ -1,10 +1,9 @@
 use libc::{c_int, off_t, stat};
 use libfuse::{
     dir::DirBuf,
-    file::{Entry, OpenOptions},
+    file::{Entry, OpenOptions, ReadOptions},
     Ino, OperationResult, Operations, Session,
 };
-use libfuse_sys::fuse_file_info;
 use std::{
     env,
     ffi::{CStr, CString},
@@ -62,13 +61,8 @@ impl Operations for Hello {
         }
     }
 
-    fn open(
-        &mut self,
-        ino: Ino,
-        flags: c_int,
-        _: &mut OpenOptions,
-    ) -> OperationResult<Option<Self::File>> {
-        match (ino, flags & libc::O_ACCMODE) {
+    fn open(&mut self, ino: Ino, opts: &mut OpenOptions) -> OperationResult<Option<Self::File>> {
+        match (ino, opts.flags() & libc::O_ACCMODE) {
             (2, libc::O_RDONLY) => Ok(None),
             (2, _) => Err(libc::EACCES),
             _ => Err(libc::EISDIR),
@@ -80,7 +74,7 @@ impl Operations for Hello {
         ino: Ino,
         buf: &mut [u8],
         off: off_t,
-        _: &mut fuse_file_info,
+        _: &mut ReadOptions<'_>,
         _: Option<&mut Self::File>,
     ) -> OperationResult<usize> {
         debug_assert!(ino == 2);

@@ -39,18 +39,11 @@ impl<'a> DirBuf<'a> {
     }
 }
 
-#[derive(Debug, Default)]
-pub struct OpenOptions {
-    cache_readdir: bool,
-}
+pub struct OpenDirOptions<'a>(pub(crate) &'a mut fuse_file_info);
 
-impl OpenOptions {
-    pub fn cache_readdir(&mut self, enabled: bool) -> &mut Self {
-        self.cache_readdir = enabled;
+impl<'a> OpenDirOptions<'a> {
+    pub fn set_cache_readdir(&mut self, enabled: bool) -> &mut Self {
+        self.0.set_cache_readdir(if enabled { 1 } else { 0 });
         self
-    }
-
-    pub(crate) fn assign_to(&self, fi: &mut fuse_file_info) {
-        fi.set_cache_readdir(if self.cache_readdir { 1 } else { 0 });
     }
 }
