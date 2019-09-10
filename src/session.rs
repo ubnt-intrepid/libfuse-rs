@@ -66,14 +66,14 @@ impl Builder {
                 Box::into_raw(Box::new(ops)) as *mut _,
             )
         };
+        unsafe { fuse_opt_free_args(&mut fargs) };
+
         if se.is_null() {
-            unsafe { fuse_opt_free_args(&mut fargs) };
             return Err(io::ErrorKind::Other.into());
         }
 
         Ok(Session {
             se: unsafe { NonNull::new_unchecked(se) },
-            args: fargs,
             set_signal_handlers: false,
             mountpoint: None,
         })
@@ -82,7 +82,6 @@ impl Builder {
 
 pub struct Session {
     se: NonNull<fuse_session>,
-    args: fuse_args,
     set_signal_handlers: bool,
     mountpoint: Option<PathBuf>,
 }
@@ -169,7 +168,6 @@ impl Drop for Session {
         self.remove_signal_handlers();
         unsafe {
             fuse_session_destroy(self.se.as_ptr());
-            fuse_opt_free_args(&mut self.args);
         }
     }
 }
