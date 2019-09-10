@@ -15,10 +15,9 @@ bitflags = "1.1"
 libfuse-sys = { path = "libfuse-sys" }
 libc = "0.2"
 log = "0.4"
-nix = "0.15"
-pretty_env_logger = "0.2"
 
 [dev-dependencies]
+pretty_env_logger = "0.2"
 structopt = "0.3"
 
 [workspace]

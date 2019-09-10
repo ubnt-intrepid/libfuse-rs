@@ -5,10 +5,16 @@ use std::{
     process::{Command, Stdio},
 };
 
+const LIBC_BLACKLIST_TYPES: &str =
+    "__(.*)_t|(dev|gid|mode|off|pid|uid)_t|flock|iovec|stat|statvfs|timespec";
+
 fn main() {
+    let manifest_dir = env::var("CARGO_MANIFEST_DIR").map(PathBuf::from).unwrap();
+    let out_dir = env::var("OUT_DIR").map(PathBuf::from).unwrap();
+
     // Build libfuse3.
-    let libfuse_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap()).join("libfuse");
-    let build_dir = PathBuf::from(env::var("OUT_DIR").unwrap()).join("build");
+    let libfuse_dir = manifest_dir.join("libfuse");
+    let build_dir = out_dir.join("build");
     run_meson(&libfuse_dir, &build_dir);
 
     println!("cargo:rerun-if-changed={}", libfuse_dir.display());
@@ -20,16 +26,15 @@ fn main() {
 
     // Generate Rust bindings.
     let bindings = bindgen::Builder::default()
-        .header("wrapper.h")
-        .clang_args(&["-Ilibfuse/include"])
+        .header("libfuse/include/fuse_lowlevel.h")
+        .clang_arg("-DFUSE_USE_VERSION=31")
         .whitelist_type("fuse_.*")
         .whitelist_function("fuse_.*")
-        .blacklist_type("flock|iovec|stat|statvfs|timespec")
+        .blacklist_type(LIBC_BLACKLIST_TYPES)
         .generate()
         .expect("Unable to generate bindings");
-    let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
     bindings
-        .write_to_file(out_path.join("bindings.rs"))
+        .write_to_file(out_dir.join("fuse_lowlevel.rs"))
         .expect("Couldn't write bindings");
 }
 
