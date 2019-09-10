@@ -33,9 +33,6 @@ fn main() {
 struct Hello;
 
 impl Operations for Hello {
-    type File = ();
-    type Dir = ();
-
     fn lookup(&mut self, parent: Ino, name: &CStr) -> OperationResult<Entry> {
         if parent != 1 {
             return Err(libc::ENOENT);
@@ -54,16 +51,16 @@ impl Operations for Hello {
         Ok(e)
     }
 
-    fn getattr(&mut self, ino: Ino, _: Option<&mut Self::File>) -> OperationResult<(stat, f64)> {
+    fn getattr(&mut self, ino: Ino, _: Option<u64>) -> OperationResult<(stat, f64)> {
         match hello_stat(ino) {
             Ok(stat) => Ok((stat, 1.0)),
             Err(_) => Err(libc::ENOENT),
         }
     }
 
-    fn open(&mut self, ino: Ino, opts: &mut OpenOptions) -> OperationResult<Option<Self::File>> {
+    fn open(&mut self, ino: Ino, opts: &mut OpenOptions) -> OperationResult<u64> {
         match (ino, opts.flags() & libc::O_ACCMODE) {
-            (2, libc::O_RDONLY) => Ok(None),
+            (2, libc::O_RDONLY) => Ok(0),
             (2, _) => Err(libc::EACCES),
             _ => Err(libc::EISDIR),
         }
@@ -75,7 +72,7 @@ impl Operations for Hello {
         buf: &mut [u8],
         off: off_t,
         _: &mut ReadOptions<'_>,
-        _: Option<&mut Self::File>,
+        _: u64,
     ) -> OperationResult<usize> {
         debug_assert!(ino == 2);
         debug_assert!(off >= 0);
@@ -98,7 +95,7 @@ impl Operations for Hello {
         ino: Ino,
         offset: off_t,
         buf: &mut DirBuf<'_>,
-        _: Option<&mut Self::File>,
+        _: u64,
     ) -> OperationResult<()> {
         if ino != 1 {
             return Err(libc::ENOTDIR);

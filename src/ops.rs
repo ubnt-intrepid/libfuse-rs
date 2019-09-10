@@ -2,7 +2,6 @@ use crate::{
     common::{ConnectionInfo, Ino},
     dir::{DirBuf, OpenDirOptions},
     file::{Entry, FlushOptions, OpenOptions, ReadOptions, ReleaseOptions, WriteOptions},
-    util::*,
 };
 use libc::{c_char, c_int, c_uint, c_void, dev_t, mode_t, off_t, stat, statvfs};
 use libfuse_sys::{
@@ -32,12 +31,6 @@ use std::{
 pub type OperationResult<T> = std::result::Result<T, c_int>;
 
 pub trait Operations {
-    /// The type of context value during opening a file.
-    type File;
-
-    /// The type of context value during opening a directory.
-    type Dir;
-
     /// Initialize the filesystem.
     #[allow(unused_variables)]
     fn init(&mut self, conn: &mut ConnectionInfo) {}
@@ -154,12 +147,8 @@ pub trait Operations {
 
     /// Open a file.
     #[allow(unused_variables)]
-    fn open(
-        &mut self,
-        ino: Ino,
-        options: &mut OpenOptions<'_>,
-    ) -> OperationResult<Option<Self::File>> {
-        Ok(None)
+    fn open(&mut self, ino: Ino, options: &mut OpenOptions<'_>) -> OperationResult<u64> {
+        Ok(0)
     }
 
     /// Create and open a file.
@@ -170,7 +159,7 @@ pub trait Operations {
         name: &CStr,
         mode: mode_t,
         options: &mut OpenOptions<'_>,
-    ) -> OperationResult<(Entry, Option<Self::File>)> {
+    ) -> OperationResult<(Entry, u64)> {
         Err(libc::ENOSYS)
     }
 
@@ -182,7 +171,7 @@ pub trait Operations {
         buf: &mut [u8],
         off: off_t,
         opts: &mut ReadOptions<'_>,
-        file: Option<&mut Self::File>,
+        fh: u64,
     ) -> OperationResult<usize> {
         Err(libc::ENOSYS)
     }
@@ -195,25 +184,20 @@ pub trait Operations {
         buf: &[u8],
         off: off_t,
         opts: &mut WriteOptions<'_>,
-        file: Option<&mut Self::File>,
+        fh: u64,
     ) -> OperationResult<usize> {
         Err(libc::ENOSYS)
     }
 
     /// Flush an opened file.
     #[allow(unused_variables)]
-    fn flush(
-        &mut self,
-        ino: Ino,
-        opts: &mut FlushOptions<'_>,
-        file: Option<&mut Self::File>,
-    ) -> OperationResult<()> {
+    fn flush(&mut self, ino: Ino, opts: &mut FlushOptions<'_>, fh: u64) -> OperationResult<()> {
         Err(libc::ENOSYS)
     }
 
     /// Get attributes from an opened file.
     #[allow(unused_variables)]
-    fn getattr(&mut self, ino: Ino, file: Option<&mut Self::File>) -> OperationResult<(stat, f64)> {
+    fn getattr(&mut self, ino: Ino, fh: Option<u64>) -> OperationResult<(stat, f64)> {
         Err(libc::ENOSYS)
     }
 
@@ -223,19 +207,14 @@ pub trait Operations {
         ino: Ino,
         attr: &stat,
         to_set: c_int,
-        file: Option<&mut Self::File>,
+        fh: Option<u64>,
     ) -> OperationResult<(stat, f64)> {
         Err(libc::ENOSYS)
     }
 
     /// Synchronisze the file contents.
     #[allow(unused_variables)]
-    fn fsync(
-        &mut self,
-        ino: Ino,
-        datasync: c_int,
-        file: Option<&mut Self::File>,
-    ) -> OperationResult<()> {
+    fn fsync(&mut self, ino: Ino, datasync: c_int, fh: u64) -> OperationResult<()> {
         Err(libc::ENOSYS)
     }
 
@@ -245,19 +224,15 @@ pub trait Operations {
         &mut self,
         ino: Ino,
         options: &mut ReleaseOptions<'_>,
-        file: Option<Self::File>,
+        fh: u64,
     ) -> OperationResult<()> {
         Err(libc::ENOSYS)
     }
 
     /// Open a directory.
     #[allow(unused_variables)]
-    fn opendir(
-        &mut self,
-        ino: Ino,
-        options: &mut OpenDirOptions,
-    ) -> OperationResult<Option<Self::Dir>> {
-        Ok(None)
+    fn opendir(&mut self, ino: Ino, options: &mut OpenDirOptions) -> OperationResult<u64> {
+        Ok(0)
     }
 
     /// Read a directory.
@@ -267,25 +242,20 @@ pub trait Operations {
         ino: Ino,
         offset: off_t,
         buf: &mut DirBuf<'_>,
-        ctx: Option<&mut Self::Dir>,
+        fh: u64,
     ) -> OperationResult<()> {
         Err(libc::ENOSYS)
     }
 
     /// Synchronisze the file contents.
     #[allow(unused_variables)]
-    fn fsyncdir(
-        &mut self,
-        ino: Ino,
-        datasync: c_int,
-        ctx: Option<&mut Self::Dir>,
-    ) -> OperationResult<()> {
+    fn fsyncdir(&mut self, ino: Ino, datasync: c_int, fh: u64) -> OperationResult<()> {
         Err(libc::ENOSYS)
     }
 
     /// Release an opened directory.
     #[allow(unused_variables)]
-    fn releasedir(&mut self, ino: Ino, ctx: Option<Self::Dir>) -> OperationResult<()> {
+    fn releasedir(&mut self, ino: Ino, fh: u64) -> OperationResult<()> {
         Err(libc::ENOSYS)
     }
 }
@@ -582,8 +552,8 @@ unsafe extern "C" fn ops_open<T: Operations>(
     call_with_ops(req, |ops: &mut T, req| {
         let fi = make_mut_unchecked(fi);
         match ops.open(ino, &mut OpenOptions(fi)) {
-            Ok(file) => {
-                fi.fh = into_fh(file);
+            Ok(fh) => {
+                fi.fh = fh;
                 fuse_reply_open(req, fi)
             }
             Err(errno) => fuse_reply_err(req, errno),
@@ -601,8 +571,8 @@ unsafe extern "C" fn ops_create<T: Operations>(
     call_with_ops(req, |ops: &mut T, req| {
         let fi = make_mut_unchecked(fi);
         match ops.create(parent, CStr::from_ptr(name), mode, &mut OpenOptions(fi)) {
-            Ok((Entry(entry), file)) => {
-                fi.fh = into_fh(file);
+            Ok((Entry(entry), fh)) => {
+                fi.fh = fh;
                 fuse_reply_create(req, &entry, fi)
             }
             Err(errno) => fuse_reply_err(req, errno),
@@ -621,8 +591,8 @@ unsafe extern "C" fn ops_read<T: Operations>(
         let fi = make_mut_unchecked(fi);
         let mut buf = Vec::with_capacity(size);
         buf.resize(size, 0u8);
-        let file = make_mut(fi.fh as *mut c_void as *mut T::File);
-        match ops.read(ino, &mut buf[..], off, &mut ReadOptions(fi), file) {
+        let fh = fi.fh;
+        match ops.read(ino, &mut buf[..], off, &mut ReadOptions(fi), fh) {
             Ok(size) => reply_buf_limited(req, &buf[..size]),
             Err(errno) => fuse_reply_err(req, errno),
         }
@@ -640,8 +610,8 @@ unsafe extern "C" fn ops_write<T: Operations>(
     call_with_ops(req, |ops: &mut T, req| {
         let fi = make_mut_unchecked(fi);
         let buf = std::slice::from_raw_parts(buf as *const u8, size);
-        let file = make_mut(fi.fh as *mut c_void as *mut T::File);
-        match ops.write(ino, &buf[..], off, &mut WriteOptions(fi), file) {
+        let fh = fi.fh;
+        match ops.write(ino, &buf[..], off, &mut WriteOptions(fi), fh) {
             Ok(count) => fuse_reply_write(req, count),
             Err(errno) => fuse_reply_err(req, errno),
         }
@@ -655,8 +625,8 @@ unsafe extern "C" fn ops_flush<T: Operations>(
 ) {
     call_with_ops(req, |ops: &mut T, req| {
         let fi = make_mut_unchecked(fi);
-        let file = make_mut(fi.fh as *mut c_void as *mut T::File);
-        match ops.flush(ino, &mut FlushOptions(fi), file) {
+        let fh = fi.fh;
+        match ops.flush(ino, &mut FlushOptions(fi), fh) {
             Ok(()) => {
                 0 /* do nothing */
             }
@@ -672,8 +642,7 @@ unsafe extern "C" fn ops_getattr<T: Operations>(
 ) {
     call_with_ops(req, |ops: &mut T, req| {
         let fi = make_mut(fi);
-        let file = fi.and_then(|fi| make_mut(fi.fh as *mut c_void as *mut T::File));
-        match ops.getattr(ino, file) {
+        match ops.getattr(ino, fi.map(|fi| fi.fh)) {
             Ok((stat, timeout)) => fuse_reply_attr(req, &stat, timeout),
             Err(errno) => fuse_reply_err(req, errno),
         }
@@ -690,8 +659,7 @@ unsafe extern "C" fn ops_setattr<T: Operations>(
     call_with_ops(req, |ops: &mut T, req| {
         let fi = make_mut(fi);
         let attr = make_mut_unchecked(attr);
-        let file = fi.and_then(|fi| make_mut(fi.fh as *mut c_void as *mut T::File));
-        match ops.setattr(ino, &*attr, to_set, file) {
+        match ops.setattr(ino, &*attr, to_set, fi.map(|fi| fi.fh)) {
             Ok((stat, timeout)) => fuse_reply_attr(req, &stat, timeout),
             Err(errno) => fuse_reply_err(req, errno),
         }
@@ -706,8 +674,7 @@ unsafe extern "C" fn ops_fsync<T: Operations>(
 ) {
     call_with_ops(req, |ops: &mut T, req| {
         let fi = make_mut_unchecked(fi);
-        let file = make_mut(fi.fh as *mut c_void as *mut T::File);
-        match ops.fsync(ino, datasync, file) {
+        match ops.fsync(ino, datasync, fi.fh) {
             Ok(()) => {
                 0 /* do nothing */
             }
@@ -723,8 +690,8 @@ unsafe extern "C" fn ops_release<T: Operations>(
 ) {
     call_with_ops(req, |ops: &mut T, req| {
         let fi = make_mut_unchecked(fi);
-        let file = from_fh::<T::File>(mem::replace(&mut fi.fh, 0u64));
-        match ops.release(ino, &mut ReleaseOptions(fi), file) {
+        let fh = fi.fh;
+        match ops.release(ino, &mut ReleaseOptions(fi), fh) {
             Ok(()) => {
                 fuse_reply_none(req);
                 0
@@ -742,9 +709,9 @@ unsafe extern "C" fn ops_opendir<T: Operations>(
     call_with_ops(req, |ops: &mut T, req| {
         let fi = make_mut_unchecked(fi);
         match ops.opendir(ino, &mut OpenDirOptions(fi)) {
-            Ok(dir) => {
+            Ok(fh) => {
                 // FIXME: avoid to use boxing.
-                fi.fh = into_fh(dir);
+                fi.fh = fh;
                 fuse_reply_open(req, fi)
             }
             Err(errno) => fuse_reply_err(req, errno),
@@ -761,7 +728,6 @@ unsafe extern "C" fn ops_readdir<T: Operations>(
 ) {
     call_with_ops(req, |ops: &mut T, req| {
         let fi = make_mut_unchecked(fi);
-        let dir = make_mut(fi.fh as *mut c_void as *mut T::Dir);
         let mut buf = Vec::with_capacity(size);
         buf.set_len(size);
 
@@ -771,7 +737,7 @@ unsafe extern "C" fn ops_readdir<T: Operations>(
             pos: 0,
         };
 
-        let res = ops.readdir(ino, offset, &mut dir_buf, dir);
+        let res = ops.readdir(ino, offset, &mut dir_buf, fi.fh);
         let DirBuf { pos, .. } = dir_buf;
 
         match res {
@@ -789,8 +755,7 @@ unsafe extern "C" fn ops_fsyncdir<T: Operations>(
 ) {
     call_with_ops(req, |ops: &mut T, req| {
         let fi = make_mut_unchecked(fi);
-        let dir = make_mut(fi.fh as *mut c_void as *mut T::Dir);
-        match ops.fsyncdir(ino, datasync, dir) {
+        match ops.fsyncdir(ino, datasync, fi.fh) {
             Ok(()) => {
                 0 /* do nothing */
             }
@@ -806,8 +771,7 @@ unsafe extern "C" fn ops_releasedir<T: Operations>(
 ) {
     call_with_ops(req, |ops: &mut T, req| {
         let fi = make_mut_unchecked(fi);
-        let dir = from_fh::<T::Dir>(mem::replace(&mut fi.fh, 0u64));
-        match ops.releasedir(ino, dir) {
+        match ops.releasedir(ino, fi.fh) {
             Ok(()) => {
                 0 /* do nothing */
             }
@@ -821,4 +785,17 @@ unsafe fn reply_buf_limited(req: &mut fuse_req, buf: &[u8]) -> c_int {
         0 => fuse_reply_buf(req, ptr::null_mut(), 0),
         n => fuse_reply_buf(req, buf.as_ptr() as *const c_char, n),
     }
+}
+
+fn make_mut<'a, T>(ptr: *mut T) -> Option<&'a mut T> {
+    if !ptr.is_null() {
+        Some(unsafe { &mut *ptr })
+    } else {
+        None
+    }
+}
+
+unsafe fn make_mut_unchecked<'a, T>(ptr: *mut T) -> &'a mut T {
+    debug_assert!(!ptr.is_null());
+    &mut *ptr
 }

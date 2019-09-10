@@ -8,7 +8,6 @@ pub mod session;
 
 mod common;
 mod ops;
-mod util;
 
 pub use crate::common::{ConnectionInfo, Ino};
 pub use crate::ops::{OperationResult, Operations};
