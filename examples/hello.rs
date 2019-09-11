@@ -2,7 +2,8 @@ use libc::{c_int, off_t, stat};
 use libfuse::{
     dir::DirBuf,
     file::{Entry, OpenOptions, ReadOptions},
-    Ino, OperationResult, Operations, Session,
+    session::Builder,
+    Ino, OperationResult, Operations,
 };
 use std::{
     env,
@@ -20,7 +21,7 @@ fn main() {
         .map(PathBuf::from)
         .expect("requires the mountpoint path");
 
-    let mut session = Session::builder("hello")
+    let mut session = Builder::new("hello")
         .debug(true)
         .build(Hello)
         .expect("failed to start fuse session");

@@ -2,44 +2,59 @@
 
 [![pipeline status](https://gitlab.com/ubnt-intrepid/libfuse-rs/badges/master/pipeline.svg)](https://gitlab.com/ubnt-intrepid/libfuse-rs/commits/master)
 
-[`libfuse`] bindings for Rust.
+## Overview
+
+This library provides a Rust binding for [`libfuse`], the user-side reference implemenation of FUSE (Filesystem in Userspace).
 
 Unlike [`rust-fuse`], this library uses the protocol-level implementation from `libfuse` *as is*.
 
-## Usage
+Note that the library is now on experimental stage and not suitable for production use.
+The following features has not been supported yet:
+
+* Some operations (e.g. `ioctl`, `poll`)
+* Splice (vectored) read
+* Multithreaded event loop
+
+## Example
 
 ```rust
-use libfuse::{Operations, OperationResult};
+use libfuse::{
+    Ino,
+    Operations,
+    OperationResult,
+    file::Entry,
+    session::Builder,
+};
+use std::{ffi::CStr, io};
 
-fn main() {
-    let ops = Ops;
+fn main() -> io::Result<()> {
+    let fs = MyFS {};
     
-    let session = Session::builder()
-        .build(ops)
-        .unwrap();
+    let mut session = Session::builder()
+        .build(fs)?;
+
+    session.set_signal_handlers()?;
+    session.mount("/path/to/mountpoint")?;
+    session.run_loop()?;
 }
 
-struct Ops;
+struct MyFS {}
 
 impl Operations for Ops {
-    type File = ();
-    type Dir = ();
-    
-    ...
+    fn lookup(&mut self, ino: Ino, name: &CStr) -> OperationResult<Entry> {
+        ...
+    }
 }
 ```
 
-## Status
-
-Experimental
-
-## Author
-
-Yusuke Sasaki
-
 ## License
 
-[MIT](LICENSE-MIT) or [Apache 2.0](LICENSE-APACHE)
+This library is licensed under either of
+
+* MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
+* Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
+
+at your option.
 
 <!-- links -->
 
