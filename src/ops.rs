@@ -192,7 +192,7 @@ pub trait Operations {
     /// Flush an opened file.
     #[allow(unused_variables)]
     fn flush(&mut self, ino: Ino, opts: &mut FlushOptions<'_>, fh: u64) -> OperationResult<()> {
-        Err(libc::ENOSYS)
+        Ok(())
     }
 
     /// Get attributes from an opened file.
@@ -226,7 +226,7 @@ pub trait Operations {
         options: &mut ReleaseOptions<'_>,
         fh: u64,
     ) -> OperationResult<()> {
-        Err(libc::ENOSYS)
+        Ok(())
     }
 
     /// Open a directory.
@@ -256,7 +256,7 @@ pub trait Operations {
     /// Release an opened directory.
     #[allow(unused_variables)]
     fn releasedir(&mut self, ino: Ino, fh: u64) -> OperationResult<()> {
-        Err(libc::ENOSYS)
+        Ok(())
     }
 }
 
@@ -392,9 +392,7 @@ unsafe extern "C" fn ops_unlink<T: Operations>(
 ) {
     call_with_ops(req, |ops: &mut T, req| {
         match ops.unlink(parent, CStr::from_ptr(name)) {
-            Ok(()) => {
-                0 /* do nothing */
-            }
+            Ok(()) => fuse_reply_err(req, 0),
             Err(errno) => fuse_reply_err(req, errno),
         }
     })
@@ -407,9 +405,7 @@ unsafe extern "C" fn ops_rmdir<T: Operations>(
 ) {
     call_with_ops(req, |ops: &mut T, req| {
         match ops.rmdir(parent, CStr::from_ptr(name)) {
-            Ok(()) => {
-                0 /* do nothing */
-            }
+            Ok(()) => fuse_reply_err(req, 0),
             Err(errno) => fuse_reply_err(req, errno),
         }
     })
@@ -445,9 +441,7 @@ unsafe extern "C" fn ops_rename<T: Operations>(
             CStr::from_ptr(newname),
             flags,
         ) {
-            Ok(()) => {
-                0 /* do nothing */
-            }
+            Ok(()) => fuse_reply_err(req, 0),
             Err(errno) => fuse_reply_err(req, errno),
         }
     })
@@ -485,9 +479,7 @@ unsafe extern "C" fn ops_setxattr<T: Operations>(
     call_with_ops(req, |ops: &mut T, req| {
         let value = std::slice::from_raw_parts(value as *const u8, size);
         match ops.setxattr(ino, CStr::from_ptr(name), value, flags) {
-            Ok(()) => {
-                0 /* do nothing */
-            }
+            Ok(()) => fuse_reply_err(req, 0),
             Err(errno) => fuse_reply_err(req, errno),
         }
     })
@@ -527,9 +519,7 @@ unsafe extern "C" fn ops_removexattr<T: Operations>(
 ) {
     call_with_ops(req, |ops: &mut T, req| {
         match ops.removexattr(ino, CStr::from_ptr(name)) {
-            Ok(()) => {
-                0 /* do nothing */
-            }
+            Ok(()) => fuse_reply_err(req, 0),
             Err(errno) => fuse_reply_err(req, errno),
         }
     })
@@ -537,9 +527,7 @@ unsafe extern "C" fn ops_removexattr<T: Operations>(
 
 unsafe extern "C" fn ops_access<T: Operations>(req: fuse_req_t, ino: fuse_ino_t, mask: c_int) {
     call_with_ops(req, |ops: &mut T, req| match ops.access(ino, mask) {
-        Ok(()) => {
-            0 /* do nothing */
-        }
+        Ok(()) => fuse_reply_err(req, 0),
         Err(errno) => fuse_reply_err(req, errno),
     })
 }
@@ -627,9 +615,7 @@ unsafe extern "C" fn ops_flush<T: Operations>(
         let fi = make_mut_unchecked(fi);
         let fh = fi.fh;
         match ops.flush(ino, &mut FlushOptions(fi), fh) {
-            Ok(()) => {
-                0 /* do nothing */
-            }
+            Ok(()) => fuse_reply_err(req, 0),
             Err(errno) => fuse_reply_err(req, errno),
         }
     })
@@ -675,9 +661,7 @@ unsafe extern "C" fn ops_fsync<T: Operations>(
     call_with_ops(req, |ops: &mut T, req| {
         let fi = make_mut_unchecked(fi);
         match ops.fsync(ino, datasync, fi.fh) {
-            Ok(()) => {
-                0 /* do nothing */
-            }
+            Ok(()) => fuse_reply_err(req, 0),
             Err(errno) => fuse_reply_err(req, errno),
         }
     })
@@ -692,10 +676,7 @@ unsafe extern "C" fn ops_release<T: Operations>(
         let fi = make_mut_unchecked(fi);
         let fh = fi.fh;
         match ops.release(ino, &mut ReleaseOptions(fi), fh) {
-            Ok(()) => {
-                fuse_reply_none(req);
-                0
-            }
+            Ok(()) => fuse_reply_err(req, 0),
             Err(errno) => fuse_reply_err(req, errno),
         }
     })
@@ -756,9 +737,7 @@ unsafe extern "C" fn ops_fsyncdir<T: Operations>(
     call_with_ops(req, |ops: &mut T, req| {
         let fi = make_mut_unchecked(fi);
         match ops.fsyncdir(ino, datasync, fi.fh) {
-            Ok(()) => {
-                0 /* do nothing */
-            }
+            Ok(()) => fuse_reply_err(req, 0),
             Err(errno) => fuse_reply_err(req, errno),
         }
     })
@@ -772,9 +751,7 @@ unsafe extern "C" fn ops_releasedir<T: Operations>(
     call_with_ops(req, |ops: &mut T, req| {
         let fi = make_mut_unchecked(fi);
         match ops.releasedir(ino, fi.fh) {
-            Ok(()) => {
-                0 /* do nothing */
-            }
+            Ok(()) => fuse_reply_err(req, 0),
             Err(errno) => fuse_reply_err(req, errno),
         }
     })
