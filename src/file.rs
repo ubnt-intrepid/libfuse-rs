@@ -1,6 +1,18 @@
 use crate::common::Ino;
-use libc::{c_int, stat};
-use libfuse_sys::{fuse_entry_param, fuse_file_info};
+use libc::{c_int, gid_t, mode_t, stat, timespec, uid_t};
+use libfuse_sys::{
+    fuse_entry_param, //
+    fuse_file_info,
+    FUSE_SET_ATTR_ATIME,
+    FUSE_SET_ATTR_ATIME_NOW,
+    FUSE_SET_ATTR_CTIME,
+    FUSE_SET_ATTR_GID,
+    FUSE_SET_ATTR_MODE,
+    FUSE_SET_ATTR_MTIME,
+    FUSE_SET_ATTR_MTIME_NOW,
+    FUSE_SET_ATTR_SIZE,
+    FUSE_SET_ATTR_UID,
+};
 
 pub struct Entry(pub(crate) fuse_entry_param);
 
@@ -117,5 +129,97 @@ impl<'a> ReleaseOptions<'a> {
 
     pub fn flock_release(&self) -> bool {
         self.0.flock_release() != 0
+    }
+}
+
+/// A set of attributes to be set.
+pub struct SetAttrs<'a> {
+    pub(crate) attr: &'a stat,
+    pub(crate) to_set: c_int,
+}
+
+impl<'a> SetAttrs<'a> {
+    /// Returns the file mode if specified.
+    pub fn mode(&self) -> Option<mode_t> {
+        if (self.to_set & FUSE_SET_ATTR_MODE) != 0 {
+            Some(self.attr.st_mode)
+        } else {
+            None
+        }
+    }
+
+    /// Returns the UID if specified.
+    pub fn uid(&self) -> Option<uid_t> {
+        if (self.to_set & FUSE_SET_ATTR_UID) != 0 {
+            Some(self.attr.st_uid)
+        } else {
+            None
+        }
+    }
+
+    /// Returns the GID if specified.
+    pub fn gid(&self) -> Option<gid_t> {
+        if (self.to_set & FUSE_SET_ATTR_GID) != 0 {
+            Some(self.attr.st_gid)
+        } else {
+            None
+        }
+    }
+
+    /// Returns the file size if specified.
+    pub fn size(&self) -> Option<i64> {
+        if (self.to_set & FUSE_SET_ATTR_SIZE) != 0 {
+            Some(self.attr.st_size)
+        } else {
+            None
+        }
+    }
+
+    /// Returns the access time if specified.
+    pub fn atime(&self) -> Option<timespec> {
+        let mut ts = timespec {
+            tv_sec: self.attr.st_atime,
+            tv_nsec: 0,
+        };
+        match self.to_set & (FUSE_SET_ATTR_ATIME | FUSE_SET_ATTR_ATIME_NOW) {
+            FUSE_SET_ATTR_ATIME_NOW => {
+                ts.tv_nsec = libc::UTIME_NOW;
+            }
+            FUSE_SET_ATTR_ATIME => {
+                ts.tv_nsec = self.attr.st_atime_nsec;
+            }
+            _ => return None,
+        }
+        Some(ts)
+    }
+
+    /// Returns the modification time if specified.
+    pub fn mtime(&self) -> Option<timespec> {
+        let mut ts = timespec {
+            tv_sec: self.attr.st_mtime,
+            tv_nsec: 0,
+        };
+        match self.to_set & (FUSE_SET_ATTR_MTIME | FUSE_SET_ATTR_MTIME_NOW) {
+            FUSE_SET_ATTR_MTIME_NOW => {
+                ts.tv_nsec = libc::UTIME_NOW;
+            }
+            FUSE_SET_ATTR_MTIME => {
+                ts.tv_nsec = self.attr.st_mtime_nsec;
+            }
+            _ => return None,
+        }
+        Some(ts)
+    }
+
+    /// Returns the creation time if specified.
+    pub fn ctime(&self) -> Option<timespec> {
+        if (self.to_set & FUSE_SET_ATTR_CTIME) != 0 {
+            Some(timespec {
+                tv_sec: self.attr.st_ctime,
+                tv_nsec: self.attr.st_ctime_nsec,
+            })
+        } else {
+            None
+        }
     }
 }

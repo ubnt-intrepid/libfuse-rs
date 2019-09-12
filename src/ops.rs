@@ -1,7 +1,7 @@
 use crate::{
     common::{ConnectionInfo, Ino},
     dir::{DirBuf, OpenDirOptions},
-    file::{Entry, FlushOptions, OpenOptions, ReadOptions, ReleaseOptions, WriteOptions},
+    file::{Entry, FlushOptions, OpenOptions, ReadOptions, ReleaseOptions, SetAttrs, WriteOptions},
 };
 use libc::{c_char, c_int, c_uint, c_void, dev_t, mode_t, off_t, stat, statvfs};
 use libfuse_sys::{
@@ -195,18 +195,18 @@ pub trait Operations {
         Ok(())
     }
 
-    /// Get attributes from an opened file.
+    /// Get file attributes.
     #[allow(unused_variables)]
     fn getattr(&mut self, ino: Ino, fh: Option<u64>) -> OperationResult<(stat, f64)> {
         Err(libc::ENOSYS)
     }
 
+    /// Set file attributes.
     #[allow(unused_variables)]
     fn setattr(
         &mut self,
         ino: Ino,
-        attr: &stat,
-        to_set: c_int,
+        attrs: &SetAttrs<'_>,
         fh: Option<u64>,
     ) -> OperationResult<(stat, f64)> {
         Err(libc::ENOSYS)
@@ -645,7 +645,14 @@ unsafe extern "C" fn ops_setattr<T: Operations>(
     call_with_ops(req, |ops: &mut T, req| {
         let fi = make_mut(fi);
         let attr = make_mut_unchecked(attr);
-        match ops.setattr(ino, &*attr, to_set, fi.map(|fi| fi.fh)) {
+        match ops.setattr(
+            ino,
+            &SetAttrs {
+                attr: &*attr,
+                to_set,
+            },
+            fi.map(|fi| fi.fh),
+        ) {
             Ok((stat, timeout)) => fuse_reply_attr(req, &stat, timeout),
             Err(errno) => fuse_reply_err(req, errno),
         }
