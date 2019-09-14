@@ -6,6 +6,7 @@ use libfuse::{
     Ino, OperationResult, Operations,
 };
 use std::{
+    borrow::Cow,
     env,
     ffi::{CStr, CString},
     mem,
@@ -70,25 +71,20 @@ impl Operations for Hello {
     fn read(
         &mut self,
         ino: Ino,
-        buf: &mut [u8],
         off: off_t,
+        _: usize,
         _: &mut ReadOptions<'_>,
         _: u64,
-    ) -> OperationResult<usize> {
+    ) -> OperationResult<Cow<'_, [u8]>> {
         debug_assert!(ino == 2);
         debug_assert!(off >= 0);
         let off = off as usize;
 
         if off > HELLO_STR.len() {
-            return Ok(0);
+            return Ok(Cow::Borrowed(&[]));
         }
 
-        let to_be_read = std::cmp::min(buf.len(), HELLO_STR.len() - off);
-
-        let src = HELLO_STR[off..off + to_be_read].as_bytes();
-        buf[..to_be_read].copy_from_slice(src);
-
-        Ok(src.len())
+        Ok(HELLO_STR[off..].as_bytes().into())
     }
 
     fn readdir(

@@ -7,6 +7,7 @@ use libfuse::{
     Ino, OperationResult, Operations,
 };
 use std::{
+    borrow::Cow,
     collections::hash_map::{Entry as MapEntry, HashMap},
     ffi::{CStr, CString},
     io,
@@ -309,11 +310,11 @@ impl Operations for MemFs {
     fn read(
         &mut self,
         ino: Ino,
-        buf: &mut [u8],
         offset: off_t,
+        _: usize,
         _: &mut ReadOptions,
         _: u64,
-    ) -> OperationResult<usize> {
+    ) -> OperationResult<Cow<'_, [u8]>> {
         let file = self.inodes.get(&ino).ok_or_else(|| libc::ENOENT)?;
         let file = file.as_file().ok_or_else(|| libc::EISDIR)?;
 
@@ -321,14 +322,10 @@ impl Operations for MemFs {
         let offset = offset as usize;
 
         if offset >= file.data.len() {
-            return Ok(0);
+            return Ok(Cow::Borrowed(&[]));
         }
 
-        let len = std::cmp::min(file.data.len() - offset, buf.len());
-        let out = &file.data[offset..offset + len];
-        buf[..len].copy_from_slice(out);
-
-        Ok(len)
+        Ok(file.data[offset..].into())
     }
 
     fn write(

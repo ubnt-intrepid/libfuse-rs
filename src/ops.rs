@@ -36,6 +36,7 @@ use libfuse_sys::{
     fuse_req_userdata,
 };
 use std::{
+    borrow::Cow,
     ffi::{CStr, CString},
     mem, ptr,
 };
@@ -180,15 +181,19 @@ pub trait Operations {
     }
 
     /// Read data from an opened file.
+    ///
+    /// If the size of returned data is larger than `bufsize`,
+    /// the remaining part is ignored and the method must be
+    /// read again them at the next call.
     #[allow(unused_variables)]
     fn read(
         &mut self,
         ino: Ino,
-        buf: &mut [u8],
         off: off_t,
+        bufsize: usize,
         opts: &mut ReadOptions<'_>,
         fh: u64,
-    ) -> OperationResult<usize> {
+    ) -> OperationResult<Cow<'_, [u8]>> {
         Err(libc::ENOSYS)
     }
 
@@ -590,17 +595,15 @@ unsafe extern "C" fn ops_create<T: Operations>(
 unsafe extern "C" fn ops_read<T: Operations>(
     req: fuse_req_t,
     ino: fuse_ino_t,
-    size: usize,
+    bufsize: usize,
     off: off_t,
     fi: *mut fuse_file_info,
 ) {
     call_with_ops(req, |ops: &mut T, req| {
         let fi = make_mut_unchecked(fi);
-        let mut buf = Vec::with_capacity(size);
-        buf.resize(size, 0u8);
         let fh = fi.fh;
-        match ops.read(ino, &mut buf[..], off, &mut ReadOptions(fi), fh) {
-            Ok(size) => reply_buf_limited(req, &buf[..size]),
+        match ops.read(ino, off, bufsize, &mut ReadOptions(fi), fh) {
+            Ok(data) => reply_buf_limited(req, &data[..std::cmp::min(data.len(), bufsize)]),
             Err(errno) => fuse_reply_err(req, errno),
         }
     })
