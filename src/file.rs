@@ -14,6 +14,7 @@ use libfuse_sys::{
     FUSE_SET_ATTR_SIZE,
     FUSE_SET_ATTR_UID,
 };
+use std::borrow::Cow;
 
 pub struct Entry(pub(crate) fuse_entry_param);
 
@@ -238,4 +239,23 @@ bitflags! {
         /// types.
         const EXCHANGE = libc::RENAME_EXCHANGE;
     }
+}
+
+bitflags! {
+    /// Additional option flags provided to `setxattr`.
+    pub struct XAttrFlags: c_int {
+        /// Perform a pure create, which fails if the named
+        /// attribute exists already.
+        const CREATE = libc::XATTR_CREATE;
+
+        /// Perform a pure replace operation, which fails
+        /// if the named attributes does not exist.
+        const REPLACE = libc::XATTR_REPLACE;
+    }
+}
+
+#[derive(Debug)]
+pub enum XAttrReply<'a> {
+    Data(Cow<'a, [u8]>),
+    Size(usize),
 }

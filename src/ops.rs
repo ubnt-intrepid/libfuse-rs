@@ -2,8 +2,16 @@ use crate::{
     common::{ConnectionInfo, Ino},
     dir::{DirBuf, OpenDirOptions},
     file::{
-        Entry, FlushOptions, OpenOptions, ReadOptions, ReleaseOptions, RenameFlags, SetAttrs,
+        Entry, //
+        FlushOptions,
+        OpenOptions,
+        ReadOptions,
+        ReleaseOptions,
+        RenameFlags,
+        SetAttrs,
         WriteOptions,
+        XAttrFlags,
+        XAttrReply,
     },
 };
 use libc::{c_char, c_int, c_uint, c_void, dev_t, mode_t, off_t, stat, statvfs};
@@ -22,6 +30,7 @@ use libfuse_sys::{
     fuse_reply_readlink,
     fuse_reply_statfs,
     fuse_reply_write,
+    fuse_reply_xattr,
     fuse_req,
     fuse_req_t,
     fuse_req_userdata,
@@ -117,27 +126,31 @@ pub trait Operations {
         Err(libc::ENOSYS)
     }
 
+    /// Set an extended attribute.
     #[allow(unused_variables)]
     fn setxattr(
         &mut self,
         ino: Ino,
         name: &CStr,
         value: &[u8],
-        flags: c_int,
+        flags: XAttrFlags,
     ) -> OperationResult<()> {
         Err(libc::ENOSYS)
     }
 
+    /// Get an extended attribute.
     #[allow(unused_variables)]
-    fn getxattr(&mut self, ino: Ino, name: &CStr, buf: &mut [u8]) -> OperationResult<usize> {
+    fn getxattr(&mut self, ino: Ino, name: &CStr, size: usize) -> OperationResult<XAttrReply<'_>> {
         Err(libc::ENOSYS)
     }
 
+    /// List extended attribute names.
     #[allow(unused_variables)]
-    fn listxattr(&mut self, ino: Ino, buf: &mut [u8]) -> OperationResult<usize> {
+    fn listxattr(&mut self, ino: Ino, size: usize) -> OperationResult<XAttrReply<'_>> {
         Err(libc::ENOSYS)
     }
 
+    /// Remove an extended attribute.
     #[allow(unused_variables)]
     fn removexattr(&mut self, ino: Ino, name: &CStr) -> OperationResult<()> {
         Err(libc::ENOSYS)
@@ -481,7 +494,12 @@ unsafe extern "C" fn ops_setxattr<T: Operations>(
 ) {
     call_with_ops(req, |ops: &mut T, req| {
         let value = std::slice::from_raw_parts(value as *const u8, size);
-        match ops.setxattr(ino, CStr::from_ptr(name), value, flags) {
+        match ops.setxattr(
+            ino,
+            CStr::from_ptr(name),
+            value,
+            XAttrFlags::from_bits_truncate(flags),
+        ) {
             Ok(()) => fuse_reply_err(req, 0),
             Err(errno) => fuse_reply_err(req, errno),
         }
@@ -495,23 +513,21 @@ unsafe extern "C" fn ops_getxattr<T: Operations>(
     size: usize,
 ) {
     call_with_ops(req, |ops: &mut T, req| {
-        let mut buf = Vec::with_capacity(size);
-        buf.resize(size, 0u8);
-        match ops.getxattr(ino, CStr::from_ptr(name), &mut buf[..]) {
-            Ok(size) => reply_buf_limited(req, &buf[..size]),
+        match ops.getxattr(ino, CStr::from_ptr(name), size) {
+            Ok(XAttrReply::Size(size)) => fuse_reply_xattr(req, size),
+            Ok(XAttrReply::Data(ref data)) if data.len() <= size => reply_buf_limited(req, &*data),
+            Ok(XAttrReply::Data(..)) => fuse_reply_err(req, libc::ERANGE),
             Err(errno) => fuse_reply_err(req, errno),
         }
     })
 }
 
 unsafe extern "C" fn ops_listxattr<T: Operations>(req: fuse_req_t, ino: fuse_ino_t, size: usize) {
-    call_with_ops(req, |ops: &mut T, req| {
-        let mut buf = Vec::with_capacity(size);
-        buf.resize(size, 0u8);
-        match ops.listxattr(ino, &mut buf[..]) {
-            Ok(size) => reply_buf_limited(req, &buf[..size]),
-            Err(errno) => fuse_reply_err(req, errno),
-        }
+    call_with_ops(req, |ops: &mut T, req| match ops.listxattr(ino, size) {
+        Ok(XAttrReply::Size(size)) => fuse_reply_xattr(req, size),
+        Ok(XAttrReply::Data(ref data)) if data.len() <= size => reply_buf_limited(req, &*data),
+        Ok(XAttrReply::Data(..)) => fuse_reply_err(req, libc::ERANGE),
+        Err(errno) => fuse_reply_err(req, errno),
     })
 }
 
