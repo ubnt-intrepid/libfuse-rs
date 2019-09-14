@@ -1,7 +1,10 @@
 use crate::{
     common::{ConnectionInfo, Ino},
     dir::{DirBuf, OpenDirOptions},
-    file::{Entry, FlushOptions, OpenOptions, ReadOptions, ReleaseOptions, SetAttrs, WriteOptions},
+    file::{
+        Entry, FlushOptions, OpenOptions, ReadOptions, ReleaseOptions, RenameFlags, SetAttrs,
+        WriteOptions,
+    },
 };
 use libc::{c_char, c_int, c_uint, c_void, dev_t, mode_t, off_t, stat, statvfs};
 use libfuse_sys::{
@@ -93,11 +96,11 @@ pub trait Operations {
     #[allow(unused_variables)]
     fn rename(
         &mut self,
-        parent: Ino,
-        name: &CStr,
+        oldparent: Ino,
+        oldname: &CStr,
         newparent: Ino,
         newname: &CStr,
-        flags: c_uint,
+        flags: RenameFlags,
     ) -> OperationResult<()> {
         Err(libc::ENOSYS)
     }
@@ -427,19 +430,19 @@ unsafe extern "C" fn ops_symlink<T: Operations>(
 
 unsafe extern "C" fn ops_rename<T: Operations>(
     req: fuse_req_t,
-    parent: fuse_ino_t,
-    name: *const c_char,
+    oldparent: fuse_ino_t,
+    oldname: *const c_char,
     newparent: fuse_ino_t,
     newname: *const c_char,
     flags: c_uint,
 ) {
     call_with_ops(req, |ops: &mut T, req| {
         match ops.rename(
-            parent,
-            CStr::from_ptr(name),
+            oldparent,
+            CStr::from_ptr(oldname),
             newparent,
             CStr::from_ptr(newname),
-            flags,
+            RenameFlags::from_bits_truncate(flags as c_int),
         ) {
             Ok(()) => fuse_reply_err(req, 0),
             Err(errno) => fuse_reply_err(req, errno),

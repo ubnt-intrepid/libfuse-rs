@@ -1,8 +1,8 @@
 use chrono::Local;
-use libc::{c_int, c_uint, dev_t, mode_t, off_t, stat, statvfs};
+use libc::{dev_t, mode_t, off_t, stat, statvfs};
 use libfuse::{
     dir::DirBuf,
-    file::{Entry, ReadOptions, SetAttrs, WriteOptions},
+    file::{Entry, ReadOptions, RenameFlags, SetAttrs, WriteOptions},
     session::Builder,
     Ino, OperationResult, Operations,
 };
@@ -254,10 +254,9 @@ impl Operations for MemFs {
         oldname: &CStr,
         newparent: Ino,
         newname: &CStr,
-        flags: c_uint,
+        flags: RenameFlags,
     ) -> OperationResult<()> {
-        let noreplace = (flags as c_int & libc::RENAME_NOREPLACE) != 0;
-        if (flags as c_int & libc::RENAME_EXCHANGE) != 0 {
+        if !flags.contains(RenameFlags::EXCHANGE) {
             return Err(libc::ENOTSUP);
         }
 
@@ -265,7 +264,7 @@ impl Operations for MemFs {
         let newname = newname.to_str().map_err(|_| libc::EIO)?;
 
         // check if the destination has already exist.
-        if noreplace {
+        if flags.contains(RenameFlags::NOREPLACE) {
             let newparent = self.inodes.get(&newparent).ok_or_else(|| libc::ENOENT)?;
             let newparent = newparent.as_dir().ok_or_else(|| libc::ENOTDIR)?;
             if newparent.children.contains_key(newname) {

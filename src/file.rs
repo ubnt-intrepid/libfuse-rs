@@ -1,4 +1,5 @@
 use crate::common::Ino;
+use bitflags::bitflags;
 use libc::{c_int, gid_t, mode_t, stat, timespec, uid_t};
 use libfuse_sys::{
     fuse_entry_param, //
@@ -221,5 +222,20 @@ impl<'a> SetAttrs<'a> {
         } else {
             None
         }
+    }
+}
+
+bitflags! {
+    /// Additional option flags provided to `rename`.
+    pub struct RenameFlags: c_int {
+        /// Don't overwrite the new inode. The `rename`
+        /// must return an error if the destination inode
+        /// has already exists.
+        const NOREPLACE = libc::RENAME_NOREPLACE;
+
+        /// Atomically exchange the old and new inode.
+        /// Both inodes must exist but may be of different
+        /// types.
+        const EXCHANGE = libc::RENAME_EXCHANGE;
     }
 }
