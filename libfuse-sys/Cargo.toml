@@ -4,10 +4,19 @@ version = "0.0.0"
 publish = false
 authors = ["Yusuke Sasaki <yusuke.sasaki.nuem@gmail.com>"]
 edition = "2018"
-build = "build.rs"
+build = "build/main.rs"
 
 [dependencies]
 libc = "0.2"
 
 [build-dependencies]
-bindgen = "0.51"
+pkg-config = "0.3"
+
+[build-dependencies.bindgen-crate]
+package = "bindgen"
+version = "0.51"
+optional = true
+
+[features]
+default = ["bindgen"]
+bindgen = ["bindgen-crate"]

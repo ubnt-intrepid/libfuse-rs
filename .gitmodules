@@ -1,3 +1,0 @@
-[submodule "libfuse-sys/libfuse"]
-	path = libfuse-sys/libfuse
-	url = https://gitlab.com/ubnt-intrepid/libfuse.git

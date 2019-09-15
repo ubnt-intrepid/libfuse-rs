@@ -11,7 +11,7 @@ stages:
 
 before_script:
   - apt-get update -yqq
-  - apt-get install -yqq --no-install-recommends build-essential pkg-config llvm-dev libclang-dev clang meson ninja-build udev libudev-dev
+  - apt-get install -yqq --no-install-recommends build-essential pkg-config llvm-dev libclang-dev clang udev libudev-dev
 
 test:
   stage: test

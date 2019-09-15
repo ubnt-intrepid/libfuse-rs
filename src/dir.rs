@@ -42,6 +42,7 @@ impl<'a> DirBuf<'a> {
 pub struct OpenDirOptions<'a>(pub(crate) &'a mut fuse_file_info);
 
 impl<'a> OpenDirOptions<'a> {
+    #[cfg(feature = "cache_readdir")]
     pub fn set_cache_readdir(&mut self, enabled: bool) -> &mut Self {
         self.0.set_cache_readdir(if enabled { 1 } else { 0 });
         self

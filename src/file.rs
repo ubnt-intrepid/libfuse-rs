@@ -4,15 +4,7 @@ use libc::{c_int, gid_t, mode_t, stat, timespec, uid_t};
 use libfuse_sys::{
     fuse_entry_param, //
     fuse_file_info,
-    FUSE_SET_ATTR_ATIME,
-    FUSE_SET_ATTR_ATIME_NOW,
-    FUSE_SET_ATTR_CTIME,
-    FUSE_SET_ATTR_GID,
-    FUSE_SET_ATTR_MODE,
-    FUSE_SET_ATTR_MTIME,
-    FUSE_SET_ATTR_MTIME_NOW,
-    FUSE_SET_ATTR_SIZE,
-    FUSE_SET_ATTR_UID,
+    fuse_setattr_flags::*,
 };
 use std::borrow::Cow;
 

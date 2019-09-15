@@ -12,14 +12,21 @@ path = "src/lib.rs"
 
 [dependencies]
 bitflags = "1.1"
-libfuse-sys = { path = "libfuse-sys" }
 libc = "0.2"
 log = "0.4"
+
+[dependencies.libfuse-sys]
+version = "0.0.0"
+path = "libfuse-sys"
+features = ["bindgen"]
 
 [dev-dependencies]
 pretty_env_logger = "0.2"
 structopt = "0.3"
 chrono = "0.4"
+
+[features]
+cache-readdir = []
 
 [workspace]
 members = [
