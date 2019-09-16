@@ -1,7 +1,5 @@
 # `libfuse-rs`
 
-[![pipeline status](https://gitlab.com/ubnt-intrepid/libfuse-rs/badges/master/pipeline.svg)](https://gitlab.com/ubnt-intrepid/libfuse-rs/commits/master)
-
 ## Overview
 
 This library provides a Rust binding for [`libfuse`], the user-side reference implemenation of FUSE (Filesystem in Userspace).
