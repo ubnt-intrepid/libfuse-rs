@@ -35,6 +35,7 @@ fn generate_bindings(fuse3_config: &pkg_config::Library, out_path: PathBuf) {
         .blacklist_type("fuse_loop_config")
         .blacklist_function("fuse_session_loop_mt(.*)")
         .default_enum_style(EnumVariation::ModuleConsts)
+        .ctypes_prefix("libc")
         .generate()
         .expect("Unable to generate bindings");
 

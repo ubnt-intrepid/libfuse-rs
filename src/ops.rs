@@ -46,7 +46,7 @@ pub type OperationResult<T> = std::result::Result<T, c_int>;
 pub trait Operations {
     /// Initialize the filesystem.
     #[allow(unused_variables)]
-    fn init(&mut self, conn: &mut ConnectionInfo) {}
+    fn init(&mut self, conn: &mut ConnectionInfo<'_>) {}
 
     /// Look up a directory entry by name and get its attributes.
     #[allow(unused_variables)]
@@ -333,8 +333,8 @@ unsafe fn call_with_ops<T: Operations>(
 
 unsafe extern "C" fn ops_init<T: Operations>(user_data: *mut c_void, conn: *mut fuse_conn_info) {
     let ops = make_mut_unchecked(user_data as *mut T);
-    let conn = make_mut_unchecked(conn as *mut ConnectionInfo);
-    ops.init(conn);
+    let conn = make_mut_unchecked(conn);
+    ops.init(&mut ConnectionInfo(conn));
 }
 
 unsafe extern "C" fn ops_destroy<T: Operations>(user_data: *mut c_void) {
