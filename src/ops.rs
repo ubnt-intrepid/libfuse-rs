@@ -56,9 +56,7 @@ pub trait Operations {
 
     /// Forget about an inode.
     #[allow(unused_variables)]
-    fn forget(&mut self, ino: Ino, nlookup: u64) -> OperationResult<()> {
-        Err(libc::ENOSYS)
-    }
+    fn forget(&mut self, ino: Ino, nlookup: u64) {}
 
     /// Read a symbolic link.
     #[allow(unused_variables)]
@@ -328,13 +326,9 @@ unsafe fn call_with_ops<T: Operations>(
     req: fuse_req_t,
     f: impl FnOnce(&mut T, &mut fuse_req) -> c_int,
 ) {
-    debug_assert!(!req.is_null());
-    let req = &mut *req;
-
-    let ops = fuse_req_userdata(req) as *mut T;
-    debug_assert!(!ops.is_null());
-
-    f(&mut *ops, req);
+    let req = make_mut_unchecked(req);
+    let ops = make_mut_unchecked(fuse_req_userdata(req) as *mut T);
+    f(ops, req);
 }
 
 unsafe extern "C" fn ops_init<T: Operations>(user_data: *mut c_void, conn: *mut fuse_conn_info) {
@@ -361,12 +355,10 @@ unsafe extern "C" fn ops_lookup<T: Operations>(
 }
 
 unsafe extern "C" fn ops_forget<T: Operations>(req: fuse_req_t, ino: fuse_ino_t, nlookup: u64) {
-    call_with_ops(req, |ops: &mut T, req| match ops.forget(ino, nlookup) {
-        Ok(()) => {
-            fuse_reply_none(req);
-            0
-        }
-        Err(errno) => fuse_reply_err(req, errno),
+    call_with_ops(req, |ops: &mut T, req| {
+        ops.forget(ino, nlookup);
+        fuse_reply_none(req);
+        0
     })
 }
 
