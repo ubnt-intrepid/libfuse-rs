@@ -3,7 +3,7 @@ use libfuse::{
     dir::DirBuf,
     file::{Entry, OpenOptions, ReadOptions},
     session::Builder,
-    Ino, OperationResult, Operations,
+    NodeId, OperationResult, Operations, ROOT_NODEID,
 };
 use std::{
     borrow::Cow,
@@ -15,6 +15,7 @@ use std::{
 
 const HELLO_STR: &str = "Hello World!\n";
 const HELLO_NAME: &str = "hello";
+const HELLO_NODEID: NodeId = 2;
 
 fn main() {
     let mountpoint = env::args()
@@ -35,8 +36,8 @@ fn main() {
 struct Hello;
 
 impl Operations for Hello {
-    fn lookup(&mut self, parent: Ino, name: &CStr) -> OperationResult<Entry> {
-        if parent != 1 {
+    fn lookup(&mut self, parent: NodeId, name: &CStr) -> OperationResult<Entry> {
+        if parent != ROOT_NODEID {
             return Err(libc::ENOENT);
         }
 
@@ -46,37 +47,37 @@ impl Operations for Hello {
         }
 
         let mut e = Entry::default();
-        e.ino(2);
-        e.attr(hello_stat(2)?);
+        e.nodeid(HELLO_NODEID);
+        e.attr(hello_stat(HELLO_NODEID)?);
         e.attr_timeout(1.0);
         e.entry_timeout(1.0);
         Ok(e)
     }
 
-    fn getattr(&mut self, ino: Ino, _: Option<u64>) -> OperationResult<(stat, f64)> {
-        match hello_stat(ino) {
+    fn getattr(&mut self, id: NodeId, _: Option<u64>) -> OperationResult<(stat, f64)> {
+        match hello_stat(id) {
             Ok(stat) => Ok((stat, 1.0)),
             Err(_) => Err(libc::ENOENT),
         }
     }
 
-    fn open(&mut self, ino: Ino, opts: &mut OpenOptions) -> OperationResult<u64> {
-        match (ino, opts.flags() & libc::O_ACCMODE) {
-            (2, libc::O_RDONLY) => Ok(0),
-            (2, _) => Err(libc::EACCES),
+    fn open(&mut self, id: NodeId, opts: &mut OpenOptions) -> OperationResult<u64> {
+        match (id, opts.flags() & libc::O_ACCMODE) {
+            (HELLO_NODEID, libc::O_RDONLY) => Ok(0),
+            (HELLO_NODEID, _) => Err(libc::EACCES),
             _ => Err(libc::EISDIR),
         }
     }
 
     fn read(
         &mut self,
-        ino: Ino,
+        id: NodeId,
         off: off_t,
         _: usize,
         _: &mut ReadOptions<'_>,
         _: u64,
     ) -> OperationResult<Cow<'_, [u8]>> {
-        debug_assert!(ino == 2);
+        debug_assert!(id == HELLO_NODEID);
         debug_assert!(off >= 0);
         let off = off as usize;
 
@@ -89,18 +90,18 @@ impl Operations for Hello {
 
     fn readdir(
         &mut self,
-        ino: Ino,
+        id: NodeId,
         offset: off_t,
         buf: &mut DirBuf<'_>,
         _: u64,
     ) -> OperationResult<()> {
-        if ino != 1 {
+        if id != ROOT_NODEID {
             return Err(libc::ENOTDIR);
         }
 
         if offset == 0 {
             let name = CString::new(HELLO_NAME).expect("valid filename");
-            let attr = hello_stat(2)?;
+            let attr = hello_stat(HELLO_NODEID)?;
             let hello_offset = 1;
             buf.add(&*name, &attr, hello_offset);
         }
@@ -109,7 +110,7 @@ impl Operations for Hello {
     }
 }
 
-fn hello_stat(ino: Ino) -> Result<stat, c_int> {
+fn hello_stat(ino: NodeId) -> Result<stat, c_int> {
     let mut stbuf = unsafe { mem::zeroed::<stat>() };
     stbuf.st_ino = ino;
     match ino {

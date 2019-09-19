@@ -4,7 +4,7 @@ use libfuse::{
     dir::DirBuf,
     file::{Entry, ReadOptions, RenameFlags, SetAttrs, WriteOptions},
     session::Builder,
-    Ino, OperationResult, Operations,
+    NodeId, OperationResult, Operations, ROOT_NODEID,
 };
 use std::{
     borrow::Cow,
@@ -14,8 +14,6 @@ use std::{
     path::PathBuf,
 };
 use structopt::StructOpt;
-
-const ROOT_INO: Ino = 1;
 
 #[derive(Debug, StructOpt)]
 struct Args {
@@ -32,7 +30,7 @@ fn main() -> io::Result<()> {
     let data_size = data.len();
     memfs
         .insert_inode(
-            ROOT_INO,
+            ROOT_NODEID,
             "hello".into(),
             INode::File(File {
                 data,
@@ -62,8 +60,8 @@ fn main() -> io::Result<()> {
 }
 
 struct MemFs {
-    inodes: HashMap<Ino, INode>,
-    next_id: Ino,
+    inodes: HashMap<NodeId, INode>,
+    next_id: u64,
 }
 
 impl MemFs {
@@ -72,13 +70,13 @@ impl MemFs {
 
         let now = Local::now();
         inodes.insert(
-            ROOT_INO,
+            ROOT_NODEID,
             INode::Dir(Dir {
                 parent: None,
                 children: HashMap::new(),
                 attr: {
                     let mut attr: stat = unsafe { std::mem::zeroed() };
-                    attr.st_ino = ROOT_INO;
+                    attr.st_ino = ROOT_NODEID;
                     attr.st_nlink = 2;
                     attr.st_ctime = now.timestamp();
                     attr.st_mtime = now.timestamp();
@@ -99,10 +97,10 @@ impl MemFs {
 
     fn insert_inode(
         &mut self,
-        parent: Ino,
+        parent: NodeId,
         name: String,
         mut inode: INode,
-    ) -> OperationResult<Ino> {
+    ) -> OperationResult<NodeId> {
         let parent = self.inodes.get_mut(&parent).ok_or_else(|| libc::ENOENT)?;
 
         let ino = self.next_id;
@@ -115,7 +113,7 @@ impl MemFs {
             }
         }
 
-        match self.inodes.entry(self.next_id) {
+        match self.inodes.entry(ino) {
             MapEntry::Occupied(..) => Err(libc::EEXIST),
             MapEntry::Vacant(entry) => {
                 inode.attr_mut().st_ino = ino;
@@ -126,7 +124,7 @@ impl MemFs {
         }
     }
 
-    fn remove_inode(&mut self, parent: Ino, name: String) -> OperationResult<()> {
+    fn remove_inode(&mut self, parent: NodeId, name: String) -> OperationResult<()> {
         let parent = self.inodes.get_mut(&parent).ok_or_else(|| libc::ENOENT)?;
         let ino = parent
             .as_dir_mut()
@@ -143,7 +141,7 @@ impl MemFs {
 }
 
 impl Operations for MemFs {
-    fn lookup(&mut self, parent: Ino, name: &CStr) -> OperationResult<Entry> {
+    fn lookup(&mut self, parent: NodeId, name: &CStr) -> OperationResult<Entry> {
         let name = name.to_str().map_err(|_| libc::EIO)?;
 
         let parent = self.inodes.get(&parent).ok_or_else(|| libc::ENOENT)?;
@@ -153,7 +151,7 @@ impl Operations for MemFs {
         let child = self.inodes.get(child).ok_or_else(|| libc::ENOENT)?;
 
         let mut e = Entry::default();
-        e.ino(child.attr().st_ino);
+        e.nodeid(child.attr().st_ino);
         e.attr(child.attr().clone());
         e.attr_timeout(0.0);
         e.entry_timeout(0.0);
@@ -163,7 +161,7 @@ impl Operations for MemFs {
 
     fn mknod(
         &mut self,
-        parent: Ino,
+        parent: NodeId,
         name: &CStr,
         mode: mode_t,
         _: dev_t,
@@ -197,7 +195,7 @@ impl Operations for MemFs {
         let inode = self.inodes.get(&ino).unwrap();
 
         let mut e = Entry::new();
-        e.ino(inode.attr().st_ino);
+        e.nodeid(inode.attr().st_ino);
         e.attr(inode.attr().clone());
         e.attr_timeout(0.0);
         e.entry_timeout(0.0);
@@ -205,7 +203,7 @@ impl Operations for MemFs {
         Ok(e)
     }
 
-    fn mkdir(&mut self, parent: Ino, name: &CStr, mode: mode_t) -> OperationResult<Entry> {
+    fn mkdir(&mut self, parent: NodeId, name: &CStr, mode: mode_t) -> OperationResult<Entry> {
         let name = name.to_str().map_err(|_| libc::EIO)?;
         let now = Local::now();
 
@@ -231,7 +229,7 @@ impl Operations for MemFs {
         let inode = self.inodes.get(&ino).unwrap();
 
         let mut e = Entry::new();
-        e.ino(inode.attr().st_ino);
+        e.nodeid(inode.attr().st_ino);
         e.attr(inode.attr().clone());
         e.attr_timeout(0.0);
         e.entry_timeout(0.0);
@@ -239,21 +237,21 @@ impl Operations for MemFs {
         Ok(e)
     }
 
-    fn unlink(&mut self, parent: Ino, name: &CStr) -> OperationResult<()> {
+    fn unlink(&mut self, parent: NodeId, name: &CStr) -> OperationResult<()> {
         let name = name.to_str().map_err(|_| libc::EIO)?;
         self.remove_inode(parent, name.into())
     }
 
-    fn rmdir(&mut self, parent: Ino, name: &CStr) -> OperationResult<()> {
+    fn rmdir(&mut self, parent: NodeId, name: &CStr) -> OperationResult<()> {
         let name = name.to_str().map_err(|_| libc::EIO)?;
         self.remove_inode(parent, name.into())
     }
 
     fn rename(
         &mut self,
-        oldparent: Ino,
+        oldparent: NodeId,
         oldname: &CStr,
-        newparent: Ino,
+        newparent: NodeId,
         newname: &CStr,
         flags: RenameFlags,
     ) -> OperationResult<()> {
@@ -301,7 +299,7 @@ impl Operations for MemFs {
 
     // TODO: symlink, readlink, forget
 
-    fn statfs(&mut self, _: Ino) -> OperationResult<statvfs> {
+    fn statfs(&mut self, _: NodeId) -> OperationResult<statvfs> {
         let mut st: statvfs = unsafe { std::mem::zeroed() };
         st.f_files = self.inodes.len() as u64;
         Ok(st)
@@ -309,7 +307,7 @@ impl Operations for MemFs {
 
     fn read(
         &mut self,
-        ino: Ino,
+        ino: NodeId,
         offset: off_t,
         _: usize,
         _: &mut ReadOptions,
@@ -330,7 +328,7 @@ impl Operations for MemFs {
 
     fn write(
         &mut self,
-        ino: Ino,
+        ino: NodeId,
         buf: &[u8],
         offset: off_t,
         _: &mut WriteOptions,
@@ -352,7 +350,7 @@ impl Operations for MemFs {
 
     fn readdir(
         &mut self,
-        ino: Ino,
+        ino: NodeId,
         offset: off_t,
         buf: &mut DirBuf,
         _: u64,
@@ -363,9 +361,9 @@ impl Operations for MemFs {
         for (i, (name, ino)) in dir.dirs(ino).enumerate().skip(offset as usize) {
             let name = CString::new(name).map_err(|_| libc::EIO)?;
             let attr = match ino {
-                ROOT_INO => {
+                ROOT_NODEID => {
                     let mut attr: stat = unsafe { std::mem::zeroed() };
-                    attr.st_ino = ROOT_INO;
+                    attr.st_ino = ROOT_NODEID;
                     attr
                 }
                 ino => {
@@ -383,14 +381,14 @@ impl Operations for MemFs {
         Ok(())
     }
 
-    fn getattr(&mut self, ino: Ino, _: Option<u64>) -> OperationResult<(stat, f64)> {
+    fn getattr(&mut self, ino: NodeId, _: Option<u64>) -> OperationResult<(stat, f64)> {
         let inode = self.inodes.get(&ino).ok_or_else(|| libc::ENOENT)?;
         Ok((inode.attr().clone(), 0.0))
     }
 
     fn setattr(
         &mut self,
-        ino: Ino,
+        ino: NodeId,
         attrs: &SetAttrs<'_>,
         _: Option<u64>,
     ) -> OperationResult<(stat, f64)> {
@@ -509,18 +507,18 @@ impl File {
 }
 
 struct Dir {
-    parent: Option<Ino>,
-    children: HashMap<String, Ino>,
+    parent: Option<NodeId>,
+    children: HashMap<String, NodeId>,
     attr: stat,
 }
 
 impl Dir {
-    fn dirs(&self, ino: Ino) -> impl Iterator<Item = (&str, Ino)> {
+    fn dirs(&self, ino: NodeId) -> impl Iterator<Item = (&str, NodeId)> {
         Some((".", ino))
             .into_iter()
             .chain(
                 self.parent
-                    .or_else(|| Some(ROOT_INO))
+                    .or_else(|| Some(ROOT_NODEID))
                     .map(|ino| ("..", ino)),
             )
             .chain(

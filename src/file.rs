@@ -1,4 +1,4 @@
-use crate::common::Ino;
+use crate::common::NodeId;
 use bitflags::bitflags;
 use libc::{c_int, gid_t, mode_t, stat, timespec, uid_t};
 use libfuse_sys::{
@@ -23,8 +23,8 @@ impl Entry {
     }
 
     /// Sets the inode number for this entry.
-    pub fn ino(&mut self, ino: Ino) -> &mut Self {
-        self.0.ino = ino;
+    pub fn nodeid(&mut self, id: NodeId) -> &mut Self {
+        self.0.ino = id;
         self
     }
 

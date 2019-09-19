@@ -3,7 +3,9 @@ use libc::c_uint;
 use libfuse_sys::{fuse_cap_flags::*, fuse_conn_info, fuse_ino_t};
 
 /// The type of inode number used in the filesystem.
-pub type Ino = fuse_ino_t;
+pub type NodeId = fuse_ino_t;
+
+pub const ROOT_NODEID: NodeId = 1;
 
 /// Connection information passed to `Operations::init` method.
 pub struct ConnectionInfo<'a>(pub(crate) &'a mut fuse_conn_info);

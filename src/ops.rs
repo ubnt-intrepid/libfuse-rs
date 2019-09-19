@@ -1,5 +1,5 @@
 use crate::{
-    common::{ConnectionInfo, Ino},
+    common::{ConnectionInfo, NodeId},
     dir::{DirBuf, OpenDirOptions},
     file::{
         Entry, //
@@ -50,17 +50,17 @@ pub trait Operations {
 
     /// Look up a directory entry by name and get its attributes.
     #[allow(unused_variables)]
-    fn lookup(&mut self, parent: Ino, name: &CStr) -> OperationResult<Entry> {
+    fn lookup(&mut self, parent: NodeId, name: &CStr) -> OperationResult<Entry> {
         Err(libc::ENOSYS)
     }
 
     /// Forget about an inode.
     #[allow(unused_variables)]
-    fn forget(&mut self, ino: Ino, nlookup: u64) {}
+    fn forget(&mut self, id: NodeId, nlookup: u64) {}
 
     /// Read a symbolic link.
     #[allow(unused_variables)]
-    fn readlink(&mut self, ino: Ino) -> OperationResult<CString> {
+    fn readlink(&mut self, id: NodeId) -> OperationResult<CString> {
         Err(libc::ENOSYS)
     }
 
@@ -68,7 +68,7 @@ pub trait Operations {
     #[allow(unused_variables)]
     fn mknod(
         &mut self,
-        parent: Ino,
+        parent: NodeId,
         name: &CStr,
         mode: mode_t,
         rdev: dev_t,
@@ -78,25 +78,25 @@ pub trait Operations {
 
     /// Create a directory.
     #[allow(unused_variables)]
-    fn mkdir(&mut self, parent: Ino, name: &CStr, mode: mode_t) -> OperationResult<Entry> {
+    fn mkdir(&mut self, parent: NodeId, name: &CStr, mode: mode_t) -> OperationResult<Entry> {
         Err(libc::ENOSYS)
     }
 
     /// Remove a file.
     #[allow(unused_variables)]
-    fn unlink(&mut self, parent: Ino, name: &CStr) -> OperationResult<()> {
+    fn unlink(&mut self, parent: NodeId, name: &CStr) -> OperationResult<()> {
         Err(libc::ENOSYS)
     }
 
     /// Remove a directory.
     #[allow(unused_variables)]
-    fn rmdir(&mut self, parent: Ino, name: &CStr) -> OperationResult<()> {
+    fn rmdir(&mut self, parent: NodeId, name: &CStr) -> OperationResult<()> {
         Err(libc::ENOSYS)
     }
 
     /// Create a symbolic link.
     #[allow(unused_variables)]
-    fn symlink(&mut self, link: &CStr, parent: Ino, name: &CStr) -> OperationResult<Entry> {
+    fn symlink(&mut self, link: &CStr, parent: NodeId, name: &CStr) -> OperationResult<Entry> {
         Err(libc::ENOSYS)
     }
 
@@ -104,9 +104,9 @@ pub trait Operations {
     #[allow(unused_variables)]
     fn rename(
         &mut self,
-        oldparent: Ino,
+        oldparent: NodeId,
         oldname: &CStr,
-        newparent: Ino,
+        newparent: NodeId,
         newname: &CStr,
         flags: RenameFlags,
     ) -> OperationResult<()> {
@@ -115,13 +115,13 @@ pub trait Operations {
 
     /// Create a hard link.
     #[allow(unused_variables)]
-    fn link(&mut self, ino: Ino, newparent: Ino, newname: &CStr) -> OperationResult<Entry> {
+    fn link(&mut self, id: NodeId, newparent: NodeId, newname: &CStr) -> OperationResult<Entry> {
         Err(libc::ENOSYS)
     }
 
     /// Get file system statistics.
     #[allow(unused_variables)]
-    fn statfs(&mut self, ino: Ino) -> OperationResult<statvfs> {
+    fn statfs(&mut self, id: NodeId) -> OperationResult<statvfs> {
         Err(libc::ENOSYS)
     }
 
@@ -129,7 +129,7 @@ pub trait Operations {
     #[allow(unused_variables)]
     fn setxattr(
         &mut self,
-        ino: Ino,
+        id: NodeId,
         name: &CStr,
         value: &[u8],
         flags: XAttrFlags,
@@ -139,30 +139,35 @@ pub trait Operations {
 
     /// Get an extended attribute.
     #[allow(unused_variables)]
-    fn getxattr(&mut self, ino: Ino, name: &CStr, size: usize) -> OperationResult<XAttrReply<'_>> {
+    fn getxattr(
+        &mut self,
+        id: NodeId,
+        name: &CStr,
+        size: usize,
+    ) -> OperationResult<XAttrReply<'_>> {
         Err(libc::ENOSYS)
     }
 
     /// List extended attribute names.
     #[allow(unused_variables)]
-    fn listxattr(&mut self, ino: Ino, size: usize) -> OperationResult<XAttrReply<'_>> {
+    fn listxattr(&mut self, id: NodeId, size: usize) -> OperationResult<XAttrReply<'_>> {
         Err(libc::ENOSYS)
     }
 
     /// Remove an extended attribute.
     #[allow(unused_variables)]
-    fn removexattr(&mut self, ino: Ino, name: &CStr) -> OperationResult<()> {
+    fn removexattr(&mut self, id: NodeId, name: &CStr) -> OperationResult<()> {
         Err(libc::ENOSYS)
     }
 
     #[allow(unused_variables)]
-    fn access(&mut self, ino: Ino, mask: c_int) -> OperationResult<()> {
+    fn access(&mut self, id: NodeId, mask: c_int) -> OperationResult<()> {
         Err(libc::ENOSYS)
     }
 
     /// Open a file.
     #[allow(unused_variables)]
-    fn open(&mut self, ino: Ino, options: &mut OpenOptions<'_>) -> OperationResult<u64> {
+    fn open(&mut self, id: NodeId, options: &mut OpenOptions<'_>) -> OperationResult<u64> {
         Ok(0)
     }
 
@@ -170,7 +175,7 @@ pub trait Operations {
     #[allow(unused_variables)]
     fn create(
         &mut self,
-        parent: Ino,
+        parent: NodeId,
         name: &CStr,
         mode: mode_t,
         options: &mut OpenOptions<'_>,
@@ -186,7 +191,7 @@ pub trait Operations {
     #[allow(unused_variables)]
     fn read(
         &mut self,
-        ino: Ino,
+        id: NodeId,
         off: off_t,
         bufsize: usize,
         opts: &mut ReadOptions<'_>,
@@ -199,7 +204,7 @@ pub trait Operations {
     #[allow(unused_variables)]
     fn write(
         &mut self,
-        ino: Ino,
+        id: NodeId,
         buf: &[u8],
         off: off_t,
         opts: &mut WriteOptions<'_>,
@@ -210,13 +215,13 @@ pub trait Operations {
 
     /// Flush an opened file.
     #[allow(unused_variables)]
-    fn flush(&mut self, ino: Ino, opts: &mut FlushOptions<'_>, fh: u64) -> OperationResult<()> {
+    fn flush(&mut self, id: NodeId, opts: &mut FlushOptions<'_>, fh: u64) -> OperationResult<()> {
         Ok(())
     }
 
     /// Get file attributes.
     #[allow(unused_variables)]
-    fn getattr(&mut self, ino: Ino, fh: Option<u64>) -> OperationResult<(stat, f64)> {
+    fn getattr(&mut self, id: NodeId, fh: Option<u64>) -> OperationResult<(stat, f64)> {
         Err(libc::ENOSYS)
     }
 
@@ -224,7 +229,7 @@ pub trait Operations {
     #[allow(unused_variables)]
     fn setattr(
         &mut self,
-        ino: Ino,
+        id: NodeId,
         attrs: &SetAttrs<'_>,
         fh: Option<u64>,
     ) -> OperationResult<(stat, f64)> {
@@ -233,7 +238,7 @@ pub trait Operations {
 
     /// Synchronisze the file contents.
     #[allow(unused_variables)]
-    fn fsync(&mut self, ino: Ino, datasync: c_int, fh: u64) -> OperationResult<()> {
+    fn fsync(&mut self, id: NodeId, datasync: c_int, fh: u64) -> OperationResult<()> {
         Err(libc::ENOSYS)
     }
 
@@ -241,7 +246,7 @@ pub trait Operations {
     #[allow(unused_variables)]
     fn release(
         &mut self,
-        ino: Ino,
+        id: NodeId,
         options: &mut ReleaseOptions<'_>,
         fh: u64,
     ) -> OperationResult<()> {
@@ -250,7 +255,7 @@ pub trait Operations {
 
     /// Open a directory.
     #[allow(unused_variables)]
-    fn opendir(&mut self, ino: Ino, options: &mut OpenDirOptions) -> OperationResult<u64> {
+    fn opendir(&mut self, id: NodeId, options: &mut OpenDirOptions) -> OperationResult<u64> {
         Ok(0)
     }
 
@@ -258,7 +263,7 @@ pub trait Operations {
     #[allow(unused_variables)]
     fn readdir(
         &mut self,
-        ino: Ino,
+        id: NodeId,
         offset: off_t,
         buf: &mut DirBuf<'_>,
         fh: u64,
@@ -268,13 +273,13 @@ pub trait Operations {
 
     /// Synchronisze the file contents.
     #[allow(unused_variables)]
-    fn fsyncdir(&mut self, ino: Ino, datasync: c_int, fh: u64) -> OperationResult<()> {
+    fn fsyncdir(&mut self, id: NodeId, datasync: c_int, fh: u64) -> OperationResult<()> {
         Err(libc::ENOSYS)
     }
 
     /// Release an opened directory.
     #[allow(unused_variables)]
-    fn releasedir(&mut self, ino: Ino, fh: u64) -> OperationResult<()> {
+    fn releasedir(&mut self, id: NodeId, fh: u64) -> OperationResult<()> {
         Ok(())
     }
 }
