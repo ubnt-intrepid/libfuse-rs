@@ -48,7 +48,7 @@ impl Operations for Hello {
 
         let mut e = Entry::default();
         e.nodeid(HELLO_NODEID);
-        e.attr(hello_stat(HELLO_NODEID)?);
+        e.attr(&hello_stat(HELLO_NODEID)?);
         e.attr_timeout(1.0);
         e.entry_timeout(1.0);
         Ok(e)

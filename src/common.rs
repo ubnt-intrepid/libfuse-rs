@@ -1,6 +1,24 @@
 use bitflags::bitflags;
 use libc::c_uint;
-use libfuse_sys::{fuse_cap_flags::*, fuse_conn_info, fuse_ino_t};
+use libfuse_sys::{
+    fuse_cap_flags::*,
+    fuse_conn_info, fuse_ino_t,
+    helpers::{
+        fuse_conn_info_capable, //
+        fuse_conn_info_congestion_threshold,
+        fuse_conn_info_max_background,
+        fuse_conn_info_max_read,
+        fuse_conn_info_proto_major,
+        fuse_conn_info_proto_minor,
+        fuse_conn_info_set_congestion_threshold,
+        fuse_conn_info_set_max_background,
+        fuse_conn_info_set_max_read,
+        fuse_conn_info_set_time_gran,
+        fuse_conn_info_set_want,
+        fuse_conn_info_time_gran,
+        fuse_conn_info_want,
+    },
+};
 
 /// The type of inode number used in the filesystem.
 pub type NodeId = fuse_ino_t;
@@ -13,57 +31,71 @@ pub struct ConnectionInfo<'a>(pub(crate) &'a mut fuse_conn_info);
 impl<'a> ConnectionInfo<'a> {
     /// Returns major version of the protocol.
     pub fn proto_major(&self) -> c_uint {
-        self.0.proto_major
+        unsafe { fuse_conn_info_proto_major(self.0) }
     }
 
     /// Returns minor version of the protocol.
     pub fn proto_minor(&self) -> c_uint {
-        self.0.proto_minor
+        unsafe { fuse_conn_info_proto_minor(self.0) }
     }
 
     /// Returns the maximum size of read requests.
     pub fn max_read(&self) -> c_uint {
-        self.0.max_read
+        unsafe { fuse_conn_info_max_read(self.0) }
     }
 
     /// Returns a mutable reference to the maximum size of read requests.
-    pub fn max_read_mut(&mut self) -> &mut c_uint {
-        &mut self.0.max_read
+    pub fn set_max_read(&mut self, max_read: c_uint) {
+        unsafe {
+            fuse_conn_info_set_max_read(self.0, max_read);
+        }
     }
 
     /// Returns capability flags that the kernel supports.
     pub fn capable(&self) -> CapabilityFlags {
-        CapabilityFlags::from_bits_truncate(self.0.capable)
+        CapabilityFlags::from_bits_truncate(unsafe { fuse_conn_info_capable(self.0) })
     }
 
     /// Returns capability flags that the filesystem wants to enable.
     pub fn want(&self) -> CapabilityFlags {
-        CapabilityFlags::from_bits_truncate(self.0.want)
+        CapabilityFlags::from_bits_truncate(unsafe { fuse_conn_info_want(self.0) })
     }
 
     /// Sets capability flags that the filesystem wants to enable.
     pub fn set_want(&mut self, flags: CapabilityFlags) {
-        self.0.want = flags.bits();
+        unsafe {
+            fuse_conn_info_set_want(self.0, flags.bits());
+        }
     }
 
-    pub fn max_background_mut(&mut self) -> &mut c_uint {
-        &mut self.0.max_background
+    pub fn max_background(&self) -> c_uint {
+        unsafe { fuse_conn_info_max_background(self.0) }
+    }
+
+    pub fn set_max_background(&mut self, max_background: c_uint) {
+        unsafe {
+            fuse_conn_info_set_max_background(self.0, max_background);
+        }
     }
 
     pub fn congestion_threshold(&self) -> c_uint {
-        self.0.congestion_threshold
+        unsafe { fuse_conn_info_congestion_threshold(self.0) }
     }
 
-    pub fn congestion_threshold_mut(&mut self) -> &mut c_uint {
-        &mut self.0.congestion_threshold
+    pub fn set_congestion_threshold(&mut self, threshold: c_uint) {
+        unsafe {
+            fuse_conn_info_set_congestion_threshold(self.0, threshold);
+        }
     }
 
     pub fn time_gran(&self) -> c_uint {
-        self.0.time_gran
+        unsafe { fuse_conn_info_time_gran(self.0) }
     }
 
-    pub fn time_gran_mut(&mut self) -> &mut c_uint {
-        &mut self.0.time_gran
+    pub fn set_time_gran(&mut self, time_gran: c_uint) {
+        unsafe {
+            fuse_conn_info_set_time_gran(self.0, time_gran);
+        }
     }
 }
 
