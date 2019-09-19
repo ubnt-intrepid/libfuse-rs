@@ -13,38 +13,6 @@ The following features has not been supported yet:
 * Splice (vectored) read
 * Multithreaded event loop
 
-## Example
-
-```rust
-use libfuse::{
-    Ino,
-    Operations,
-    OperationResult,
-    file::Entry,
-    session::Builder,
-};
-use std::{ffi::CStr, io};
-
-fn main() -> io::Result<()> {
-    let fs = MyFS {};
-    
-    let mut session = Session::builder()
-        .build(fs)?;
-
-    session.set_signal_handlers()?;
-    session.mount("/path/to/mountpoint")?;
-    session.run_loop()?;
-}
-
-struct MyFS {}
-
-impl Operations for Ops {
-    fn lookup(&mut self, ino: Ino, name: &CStr) -> OperationResult<Entry> {
-        ...
-    }
-}
-```
-
 ## License
 
 This library is licensed under either of
