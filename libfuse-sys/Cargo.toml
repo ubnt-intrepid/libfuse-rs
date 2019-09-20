@@ -13,12 +13,6 @@ libc = "0.2"
 cc = "1.0"
 pkg-config = "0.3"
 
-[build-dependencies.bindgen-crate]
-package = "bindgen"
-version = "0.51"
-optional = true
-
 [features]
-default = ["bindgen"]
-bindgen = ["bindgen-crate"]
+default = []
 cache-readdir = []

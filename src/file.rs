@@ -2,8 +2,7 @@ use crate::common::NodeId;
 use bitflags::bitflags;
 use libc::{c_int, gid_t, mode_t, stat, timespec, uid_t};
 use libfuse_sys::{
-    fuse_entry_param, //
-    fuse_file_info,
+    fuse_entry_param, fuse_file_info,
     fuse_setattr_flags::*,
     helpers::{
         fuse_entry_param_attr, //
