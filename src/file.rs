@@ -2,17 +2,40 @@ use crate::common::NodeId;
 use bitflags::bitflags;
 use libc::{c_int, gid_t, mode_t, stat, timespec, uid_t};
 use libfuse_sys::{
-    fuse_entry_param, //
-    fuse_file_info,
+    fuse_entry_param, fuse_file_info,
     fuse_setattr_flags::*,
+    helpers::{
+        fuse_entry_param_attr, //
+        fuse_entry_param_attr_timeout,
+        fuse_entry_param_entry_timeout,
+        fuse_entry_param_generation,
+        fuse_entry_param_ino,
+        fuse_entry_param_new,
+        fuse_file_info_flags,
+        fuse_file_info_flock_release,
+        fuse_file_info_flush,
+        fuse_file_info_lock_owner,
+        fuse_file_info_set_direct_io,
+        fuse_file_info_set_keep_cache,
+        fuse_file_info_set_nonseekable,
+        fuse_file_info_writepage,
+    },
 };
-use std::borrow::Cow;
+use std::{borrow::Cow, ptr::NonNull};
 
-pub struct Entry(pub(crate) fuse_entry_param);
+pub struct Entry(pub(crate) NonNull<fuse_entry_param>);
 
 impl Default for Entry {
     fn default() -> Self {
-        Self(unsafe { std::mem::zeroed() })
+        Self(NonNull::new(unsafe { fuse_entry_param_new() }).unwrap())
+    }
+}
+
+impl Drop for Entry {
+    fn drop(&mut self) {
+        unsafe {
+            libc::free(self.0.as_ptr() as *mut _);
+        }
     }
 }
 
@@ -24,30 +47,40 @@ impl Entry {
 
     /// Sets the inode number for this entry.
     pub fn nodeid(&mut self, id: NodeId) -> &mut Self {
-        self.0.ino = id;
+        unsafe {
+            fuse_entry_param_ino(self.0.as_mut(), id);
+        }
         self
     }
 
     /// Sets the generation number for this entry.
     pub fn generation(&mut self, gen: u64) -> &mut Self {
-        self.0.generation = gen;
+        unsafe {
+            fuse_entry_param_generation(self.0.as_mut(), gen);
+        }
         self
     }
 
     /// Sets the attributes associated with this entry.
-    pub fn attr(&mut self, attr: stat) -> &mut Self {
-        self.0.attr = attr;
+    pub fn attr(&mut self, attr: &stat) -> &mut Self {
+        unsafe {
+            fuse_entry_param_attr(self.0.as_mut(), attr);
+        }
         self
     }
 
     ///
     pub fn attr_timeout(&mut self, timeout: f64) -> &mut Self {
-        self.0.attr_timeout = timeout;
+        unsafe {
+            fuse_entry_param_attr_timeout(self.0.as_mut(), timeout);
+        }
         self
     }
 
     pub fn entry_timeout(&mut self, timeout: f64) -> &mut Self {
-        self.0.entry_timeout = timeout;
+        unsafe {
+            fuse_entry_param_entry_timeout(self.0.as_mut(), timeout);
+        }
         self
     }
 }
@@ -56,21 +89,27 @@ pub struct OpenOptions<'a>(pub(crate) &'a mut fuse_file_info);
 
 impl<'a> OpenOptions<'a> {
     pub fn flags(&self) -> c_int {
-        self.0.flags
+        unsafe { fuse_file_info_flags(self.0) }
     }
 
     pub fn set_direct_io(&mut self, enabled: bool) -> &mut Self {
-        self.0.set_direct_io(if enabled { 1 } else { 0 });
+        unsafe {
+            fuse_file_info_set_direct_io(self.0, if enabled { 1 } else { 0 });
+        }
         self
     }
 
     pub fn set_keep_cache(&mut self, enabled: bool) -> &mut Self {
-        self.0.set_keep_cache(if enabled { 1 } else { 0 });
+        unsafe {
+            fuse_file_info_set_keep_cache(self.0, if enabled { 1 } else { 0 });
+        }
         self
     }
 
     pub fn set_nonseekable(&mut self, enabled: bool) -> &mut Self {
-        self.0.set_nonseekable(if enabled { 1 } else { 0 });
+        unsafe {
+            fuse_file_info_set_nonseekable(self.0, if enabled { 1 } else { 0 });
+        }
         self
     }
 }
@@ -79,26 +118,27 @@ pub struct ReadOptions<'a>(pub(crate) &'a mut fuse_file_info);
 
 impl<'a> ReadOptions<'a> {
     pub fn flags(&self) -> c_int {
-        self.0.flags
+        unsafe { fuse_file_info_flags(self.0) }
     }
 
     pub fn lock_owner(&self) -> u64 {
-        self.0.lock_owner
+        unsafe { fuse_file_info_lock_owner(self.0) }
     }
 }
 
 pub struct WriteOptions<'a>(pub(crate) &'a mut fuse_file_info);
 
 impl<'a> WriteOptions<'a> {
-    pub fn writepage(&self) -> bool {
-        self.0.writepage() != 0
-    }
     pub fn flags(&self) -> c_int {
-        self.0.flags
+        unsafe { fuse_file_info_flags(self.0) }
     }
 
     pub fn lock_owner(&self) -> u64 {
-        self.0.lock_owner
+        unsafe { fuse_file_info_lock_owner(self.0) }
+    }
+
+    pub fn writepage(&self) -> bool {
+        unsafe { fuse_file_info_writepage(self.0) != 0 }
     }
 }
 
@@ -106,7 +146,7 @@ pub struct FlushOptions<'a>(pub(crate) &'a mut fuse_file_info);
 
 impl<'a> FlushOptions<'a> {
     pub fn lock_owner(&self) -> u64 {
-        self.0.lock_owner
+        unsafe { fuse_file_info_lock_owner(self.0) }
     }
 }
 
@@ -114,15 +154,15 @@ pub struct ReleaseOptions<'a>(pub(crate) &'a mut fuse_file_info);
 
 impl<'a> ReleaseOptions<'a> {
     pub fn flush(&self) -> bool {
-        self.0.flush() != 0
+        unsafe { fuse_file_info_flush(self.0) != 0 }
     }
 
     pub fn lock_owner(&self) -> u64 {
-        self.0.lock_owner
+        unsafe { fuse_file_info_lock_owner(self.0) }
     }
 
     pub fn flock_release(&self) -> bool {
-        self.0.flock_release() != 0
+        unsafe { fuse_file_info_flock_release(self.0) != 0 }
     }
 }
 

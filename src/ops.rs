@@ -34,6 +34,7 @@ use libfuse_sys::{
     fuse_req,
     fuse_req_t,
     fuse_req_userdata,
+    helpers::{fuse_file_info_fh, fuse_file_info_set_fh},
 };
 use std::{
     borrow::Cow,
@@ -284,82 +285,75 @@ pub trait Operations {
     }
 }
 
-pub(super) fn make_fuse_lowlevel_ops<T: Operations>() -> fuse_lowlevel_ops {
-    let mut ops = unsafe { mem::zeroed::<fuse_lowlevel_ops>() };
+pub(super) unsafe fn assign_ops<T: Operations>(op: &mut fuse_lowlevel_ops, _: &T) {
+    macro_rules! map_ops {
+        ($( $op:ident => $f:ident, )*) => {$(
+            libfuse_sys::helpers::$f(op, Some($op::<T>));
+        )*}
+    }
 
-    ops.init = Some(ops_init::<T>);
-    ops.destroy = Some(ops_destroy::<T>);
-    ops.lookup = Some(ops_lookup::<T>);
-    ops.forget = Some(ops_forget::<T>);
+    map_ops! {
+        on_init => fuse_ll_ops_on_init,
+        on_destroy => fuse_ll_ops_on_destroy,
+        on_lookup => fuse_ll_ops_on_lookup,
+        on_forget => fuse_ll_ops_on_forget,
+        on_getattr => fuse_ll_ops_on_getattr,
+        on_setattr => fuse_ll_ops_on_setattr,
+        on_readlink => fuse_ll_ops_on_readlink,
+        on_mknod => fuse_ll_ops_on_mknod,
+        on_mkdir => fuse_ll_ops_on_mkdir,
+        on_unlink => fuse_ll_ops_on_unlink,
+        on_rmdir => fuse_ll_ops_on_rmdir,
+        on_symlink => fuse_ll_ops_on_symlink,
+        on_rename => fuse_ll_ops_on_rename,
+        on_link => fuse_ll_ops_on_link,
+        on_open => fuse_ll_ops_on_open,
+        on_read => fuse_ll_ops_on_read,
+        on_write => fuse_ll_ops_on_write,
+        on_flush => fuse_ll_ops_on_flush,
+        on_release => fuse_ll_ops_on_release,
+        on_fsync => fuse_ll_ops_on_fsync,
+        on_opendir => fuse_ll_ops_on_opendir,
+        on_readdir => fuse_ll_ops_on_readdir,
+        on_releasedir => fuse_ll_ops_on_releasedir,
+        on_fsyncdir => fuse_ll_ops_on_fsyncdir,
+        on_statfs => fuse_ll_ops_on_statfs,
+        on_setxattr => fuse_ll_ops_on_setxattr,
+        on_getxattr => fuse_ll_ops_on_getxattr,
+        on_listxattr => fuse_ll_ops_on_listxattr,
+        on_removexattr => fuse_ll_ops_on_removexattr,
+        on_access => fuse_ll_ops_on_access,
+        on_create => fuse_ll_ops_on_create,
 
-    // TODO: bmap
-    ops.readlink = Some(ops_readlink::<T>);
-    ops.mknod = Some(ops_mknod::<T>);
-    ops.mkdir = Some(ops_mkdir::<T>);
-    ops.unlink = Some(ops_unlink::<T>);
-    ops.rmdir = Some(ops_rmdir::<T>);
-    ops.symlink = Some(ops_symlink::<T>);
-    ops.rename = Some(ops_rename::<T>);
-    ops.link = Some(ops_link::<T>);
-    ops.statfs = Some(ops_statfs::<T>);
-    ops.setxattr = Some(ops_setxattr::<T>);
-    ops.getxattr = Some(ops_getxattr::<T>);
-    ops.listxattr = Some(ops_listxattr::<T>);
-    ops.removexattr = Some(ops_removexattr::<T>);
-    ops.access = Some(ops_access::<T>);
-
-    // TODO: getlk, setlk, ioctl, poll, flock, fallocate, copy_file_range
-    ops.open = Some(ops_open::<T>);
-    ops.create = Some(ops_create::<T>);
-    ops.read = Some(ops_read::<T>);
-    ops.write = Some(ops_write::<T>);
-    ops.flush = Some(ops_flush::<T>);
-    ops.getattr = Some(ops_getattr::<T>);
-    ops.setattr = Some(ops_setattr::<T>);
-    ops.fsync = Some(ops_fsync::<T>);
-    ops.release = Some(ops_release::<T>);
-
-    ops.opendir = Some(ops_opendir::<T>);
-    ops.readdir = Some(ops_readdir::<T>);
-    ops.fsyncdir = Some(ops_fsyncdir::<T>);
-    ops.releasedir = Some(ops_releasedir::<T>);
-
-    ops
+        // TODO: getlk, setlk, bmap, ioctl, poll, write_buf, retrieve_reply,
+        //       forget_multi, flock, fallocate, readdirplus, copy_file_range
+    }
 }
 
-unsafe fn call_with_ops<T: Operations>(
-    req: fuse_req_t,
-    f: impl FnOnce(&mut T, &mut fuse_req) -> c_int,
-) {
-    let req = make_mut_unchecked(req);
-    let ops = make_mut_unchecked(fuse_req_userdata(req) as *mut T);
-    f(ops, req);
-}
-
-unsafe extern "C" fn ops_init<T: Operations>(user_data: *mut c_void, conn: *mut fuse_conn_info) {
+unsafe extern "C" fn on_init<T: Operations>(user_data: *mut c_void, conn: *mut fuse_conn_info) {
     let ops = make_mut_unchecked(user_data as *mut T);
     let conn = make_mut_unchecked(conn);
     ops.init(&mut ConnectionInfo(conn));
 }
 
-unsafe extern "C" fn ops_destroy<T: Operations>(user_data: *mut c_void) {
+unsafe extern "C" fn on_destroy<T: Operations>(user_data: *mut c_void) {
     mem::drop(Box::from_raw(user_data as *mut T));
 }
 
-unsafe extern "C" fn ops_lookup<T: Operations>(
+unsafe extern "C" fn on_lookup<T: Operations>(
     req: fuse_req_t,
     parent: fuse_ino_t,
     name: *const c_char,
 ) {
     call_with_ops(req, |ops: &mut T, req| {
         match ops.lookup(parent, CStr::from_ptr(name)) {
-            Ok(Entry(entry)) => fuse_reply_entry(req, &entry),
+            Ok(Entry(entry)) => fuse_reply_entry(req, entry.as_ref()),
             Err(errno) => fuse_reply_err(req, errno),
         }
     })
 }
 
-unsafe extern "C" fn ops_forget<T: Operations>(req: fuse_req_t, ino: fuse_ino_t, nlookup: u64) {
+unsafe extern "C" fn on_forget<T: Operations>(req: fuse_req_t, ino: fuse_ino_t, nlookup: u64) {
     call_with_ops(req, |ops: &mut T, req| {
         ops.forget(ino, nlookup);
         fuse_reply_none(req);
@@ -367,14 +361,52 @@ unsafe extern "C" fn ops_forget<T: Operations>(req: fuse_req_t, ino: fuse_ino_t,
     })
 }
 
-unsafe extern "C" fn ops_readlink<T: Operations>(req: fuse_req_t, ino: fuse_ino_t) {
+unsafe extern "C" fn on_getattr<T: Operations>(
+    req: fuse_req_t,
+    ino: fuse_ino_t,
+    fi: *mut fuse_file_info,
+) {
+    call_with_ops(req, |ops: &mut T, req| {
+        let fi = make_mut(fi);
+        match ops.getattr(ino, fi.map(|fi| fuse_file_info_fh(fi))) {
+            Ok((stat, timeout)) => fuse_reply_attr(req, &stat, timeout),
+            Err(errno) => fuse_reply_err(req, errno),
+        }
+    })
+}
+
+unsafe extern "C" fn on_setattr<T: Operations>(
+    req: fuse_req_t,
+    ino: fuse_ino_t,
+    attr: *const stat,
+    to_set: c_int,
+    fi: *mut fuse_file_info,
+) {
+    call_with_ops(req, |ops: &mut T, req| {
+        let fi = make_mut(fi);
+        let attr = make_ref_unchecked(attr);
+        match ops.setattr(
+            ino,
+            &SetAttrs {
+                attr: &*attr,
+                to_set,
+            },
+            fi.map(|fi| fuse_file_info_fh(fi)),
+        ) {
+            Ok((stat, timeout)) => fuse_reply_attr(req, &stat, timeout),
+            Err(errno) => fuse_reply_err(req, errno),
+        }
+    })
+}
+
+unsafe extern "C" fn on_readlink<T: Operations>(req: fuse_req_t, ino: fuse_ino_t) {
     call_with_ops(req, |ops: &mut T, req| match ops.readlink(ino) {
         Ok(content) => fuse_reply_readlink(req, content.as_ptr()),
         Err(errno) => fuse_reply_err(req, errno),
     })
 }
 
-unsafe extern "C" fn ops_mknod<T: Operations>(
+unsafe extern "C" fn on_mknod<T: Operations>(
     req: fuse_req_t,
     parent: fuse_ino_t,
     name: *const c_char,
@@ -383,13 +415,13 @@ unsafe extern "C" fn ops_mknod<T: Operations>(
 ) {
     call_with_ops(req, |ops: &mut T, req| {
         match ops.mknod(parent, CStr::from_ptr(name), mode, rdev) {
-            Ok(Entry(entry)) => fuse_reply_entry(req, &entry),
+            Ok(Entry(entry)) => fuse_reply_entry(req, entry.as_ref()),
             Err(errno) => fuse_reply_err(req, errno),
         }
     })
 }
 
-unsafe extern "C" fn ops_mkdir<T: Operations>(
+unsafe extern "C" fn on_mkdir<T: Operations>(
     req: fuse_req_t,
     parent: fuse_ino_t,
     name: *const c_char,
@@ -397,13 +429,13 @@ unsafe extern "C" fn ops_mkdir<T: Operations>(
 ) {
     call_with_ops(req, |ops: &mut T, req| {
         match ops.mkdir(parent, CStr::from_ptr(name), mode) {
-            Ok(Entry(entry)) => fuse_reply_entry(req, &entry),
+            Ok(Entry(entry)) => fuse_reply_entry(req, entry.as_ref()),
             Err(errno) => fuse_reply_err(req, errno),
         }
     })
 }
 
-unsafe extern "C" fn ops_unlink<T: Operations>(
+unsafe extern "C" fn on_unlink<T: Operations>(
     req: fuse_req_t,
     parent: fuse_ino_t,
     name: *const c_char,
@@ -416,7 +448,7 @@ unsafe extern "C" fn ops_unlink<T: Operations>(
     })
 }
 
-unsafe extern "C" fn ops_rmdir<T: Operations>(
+unsafe extern "C" fn on_rmdir<T: Operations>(
     req: fuse_req_t,
     parent: fuse_ino_t,
     name: *const c_char,
@@ -429,7 +461,7 @@ unsafe extern "C" fn ops_rmdir<T: Operations>(
     })
 }
 
-unsafe extern "C" fn ops_symlink<T: Operations>(
+unsafe extern "C" fn on_symlink<T: Operations>(
     req: fuse_req_t,
     link: *const c_char,
     parent: fuse_ino_t,
@@ -437,13 +469,13 @@ unsafe extern "C" fn ops_symlink<T: Operations>(
 ) {
     call_with_ops(req, |ops: &mut T, req| {
         match ops.symlink(CStr::from_ptr(link), parent, CStr::from_ptr(name)) {
-            Ok(Entry(entry)) => fuse_reply_entry(req, &entry),
+            Ok(Entry(entry)) => fuse_reply_entry(req, entry.as_ref()),
             Err(errno) => fuse_reply_err(req, errno),
         }
     })
 }
 
-unsafe extern "C" fn ops_rename<T: Operations>(
+unsafe extern "C" fn on_rename<T: Operations>(
     req: fuse_req_t,
     oldparent: fuse_ino_t,
     oldname: *const c_char,
@@ -465,7 +497,7 @@ unsafe extern "C" fn ops_rename<T: Operations>(
     })
 }
 
-unsafe extern "C" fn ops_link<T: Operations>(
+unsafe extern "C" fn on_link<T: Operations>(
     req: fuse_req_t,
     ino: fuse_ino_t,
     newparent: fuse_ino_t,
@@ -473,20 +505,196 @@ unsafe extern "C" fn ops_link<T: Operations>(
 ) {
     call_with_ops(req, |ops: &mut T, req| {
         match ops.link(ino, newparent, CStr::from_ptr(newname)) {
-            Ok(Entry(entry)) => fuse_reply_entry(req, &entry),
+            Ok(Entry(entry)) => fuse_reply_entry(req, entry.as_ref()),
             Err(errno) => fuse_reply_err(req, errno),
         }
     })
 }
 
-unsafe extern "C" fn ops_statfs<T: Operations>(req: fuse_req_t, ino: fuse_ino_t) {
+unsafe extern "C" fn on_open<T: Operations>(
+    req: fuse_req_t,
+    ino: fuse_ino_t,
+    fi: *mut fuse_file_info,
+) {
+    call_with_ops(req, |ops: &mut T, req| {
+        let fi = make_mut_unchecked(fi);
+        match ops.open(ino, &mut OpenOptions(fi)) {
+            Ok(fh) => {
+                fuse_file_info_set_fh(fi, fh);
+                fuse_reply_open(req, fi)
+            }
+            Err(errno) => fuse_reply_err(req, errno),
+        }
+    })
+}
+
+unsafe extern "C" fn on_read<T: Operations>(
+    req: fuse_req_t,
+    ino: fuse_ino_t,
+    bufsize: usize,
+    off: off_t,
+    fi: *mut fuse_file_info,
+) {
+    call_with_ops(req, |ops: &mut T, req| {
+        let fi = make_mut_unchecked(fi);
+        let fh = fuse_file_info_fh(fi);
+        match ops.read(ino, off, bufsize, &mut ReadOptions(fi), fh) {
+            Ok(data) => reply_buf_limited(req, &data[..std::cmp::min(data.len(), bufsize)]),
+            Err(errno) => fuse_reply_err(req, errno),
+        }
+    })
+}
+
+unsafe extern "C" fn on_write<T: Operations>(
+    req: fuse_req_t,
+    ino: fuse_ino_t,
+    buf: *const c_char,
+    size: usize,
+    off: off_t,
+    fi: *mut fuse_file_info,
+) {
+    call_with_ops(req, |ops: &mut T, req| {
+        let fi = make_mut_unchecked(fi);
+        let buf = std::slice::from_raw_parts(buf as *const u8, size);
+        let fh = fuse_file_info_fh(fi);
+        match ops.write(ino, &buf[..], off, &mut WriteOptions(fi), fh) {
+            Ok(count) => fuse_reply_write(req, count),
+            Err(errno) => fuse_reply_err(req, errno),
+        }
+    })
+}
+
+unsafe extern "C" fn on_flush<T: Operations>(
+    req: fuse_req_t,
+    ino: fuse_ino_t,
+    fi: *mut fuse_file_info,
+) {
+    call_with_ops(req, |ops: &mut T, req| {
+        let fi = make_mut_unchecked(fi);
+        let fh = fuse_file_info_fh(fi);
+        match ops.flush(ino, &mut FlushOptions(fi), fh) {
+            Ok(()) => fuse_reply_err(req, 0),
+            Err(errno) => fuse_reply_err(req, errno),
+        }
+    })
+}
+
+unsafe extern "C" fn on_release<T: Operations>(
+    req: fuse_req_t,
+    ino: fuse_ino_t,
+    fi: *mut fuse_file_info,
+) {
+    call_with_ops(req, |ops: &mut T, req| {
+        let fi = make_mut_unchecked(fi);
+        let fh = fuse_file_info_fh(fi);
+        match ops.release(ino, &mut ReleaseOptions(fi), fh) {
+            Ok(()) => fuse_reply_err(req, 0),
+            Err(errno) => fuse_reply_err(req, errno),
+        }
+    })
+}
+
+unsafe extern "C" fn on_fsync<T: Operations>(
+    req: fuse_req_t,
+    ino: fuse_ino_t,
+    datasync: c_int,
+    fi: *mut fuse_file_info,
+) {
+    call_with_ops(req, |ops: &mut T, req| {
+        let fi = make_mut_unchecked(fi);
+        let fh = fuse_file_info_fh(fi);
+        match ops.fsync(ino, datasync, fh) {
+            Ok(()) => fuse_reply_err(req, 0),
+            Err(errno) => fuse_reply_err(req, errno),
+        }
+    })
+}
+
+unsafe extern "C" fn on_opendir<T: Operations>(
+    req: fuse_req_t,
+    ino: fuse_ino_t,
+    fi: *mut fuse_file_info,
+) {
+    call_with_ops(req, |ops: &mut T, req| {
+        let fi = make_mut_unchecked(fi);
+        match ops.opendir(ino, &mut OpenDirOptions(fi)) {
+            Ok(fh) => {
+                fuse_file_info_set_fh(fi, fh);
+                fuse_reply_open(req, fi)
+            }
+            Err(errno) => fuse_reply_err(req, errno),
+        }
+    })
+}
+
+unsafe extern "C" fn on_readdir<T: Operations>(
+    req: fuse_req_t,
+    ino: fuse_ino_t,
+    size: usize,
+    offset: off_t,
+    fi: *mut fuse_file_info,
+) {
+    call_with_ops(req, |ops: &mut T, req| {
+        let fi = make_mut_unchecked(fi);
+        let fh = fuse_file_info_fh(fi);
+        let mut buf = Vec::with_capacity(size);
+        buf.set_len(size);
+
+        let mut dir_buf = DirBuf {
+            req: &mut *req,
+            buf: &mut buf[..],
+            pos: 0,
+        };
+
+        let res = ops.readdir(ino, offset, &mut dir_buf, fh);
+        let DirBuf { pos, .. } = dir_buf;
+
+        match res {
+            Ok(()) => reply_buf_limited(req, &buf[..pos]),
+            Err(errno) => fuse_reply_err(req, errno),
+        }
+    })
+}
+
+unsafe extern "C" fn on_releasedir<T: Operations>(
+    req: fuse_req_t,
+    ino: fuse_ino_t,
+    fi: *mut fuse_file_info,
+) {
+    call_with_ops(req, |ops: &mut T, req| {
+        let fi = make_mut_unchecked(fi);
+        let fh = fuse_file_info_fh(fi);
+        match ops.releasedir(ino, fh) {
+            Ok(()) => fuse_reply_err(req, 0),
+            Err(errno) => fuse_reply_err(req, errno),
+        }
+    })
+}
+
+unsafe extern "C" fn on_fsyncdir<T: Operations>(
+    req: fuse_req_t,
+    ino: fuse_ino_t,
+    datasync: c_int,
+    fi: *mut fuse_file_info,
+) {
+    call_with_ops(req, |ops: &mut T, req| {
+        let fi = make_mut_unchecked(fi);
+        let fh = fuse_file_info_fh(fi);
+        match ops.fsyncdir(ino, datasync, fh) {
+            Ok(()) => fuse_reply_err(req, 0),
+            Err(errno) => fuse_reply_err(req, errno),
+        }
+    })
+}
+
+unsafe extern "C" fn on_statfs<T: Operations>(req: fuse_req_t, ino: fuse_ino_t) {
     call_with_ops(req, |ops: &mut T, req| match ops.statfs(ino) {
         Ok(stat) => fuse_reply_statfs(req, &stat),
         Err(errno) => fuse_reply_err(req, errno),
     })
 }
 
-unsafe extern "C" fn ops_setxattr<T: Operations>(
+unsafe extern "C" fn on_setxattr<T: Operations>(
     req: fuse_req_t,
     ino: fuse_ino_t,
     name: *const c_char,
@@ -508,7 +716,7 @@ unsafe extern "C" fn ops_setxattr<T: Operations>(
     })
 }
 
-unsafe extern "C" fn ops_getxattr<T: Operations>(
+unsafe extern "C" fn on_getxattr<T: Operations>(
     req: fuse_req_t,
     ino: fuse_ino_t,
     name: *const c_char,
@@ -524,7 +732,7 @@ unsafe extern "C" fn ops_getxattr<T: Operations>(
     })
 }
 
-unsafe extern "C" fn ops_listxattr<T: Operations>(req: fuse_req_t, ino: fuse_ino_t, size: usize) {
+unsafe extern "C" fn on_listxattr<T: Operations>(req: fuse_req_t, ino: fuse_ino_t, size: usize) {
     call_with_ops(req, |ops: &mut T, req| match ops.listxattr(ino, size) {
         Ok(XAttrReply::Size(size)) => fuse_reply_xattr(req, size),
         Ok(XAttrReply::Data(ref data)) if data.len() <= size => reply_buf_limited(req, &*data),
@@ -533,7 +741,7 @@ unsafe extern "C" fn ops_listxattr<T: Operations>(req: fuse_req_t, ino: fuse_ino
     })
 }
 
-unsafe extern "C" fn ops_removexattr<T: Operations>(
+unsafe extern "C" fn on_removexattr<T: Operations>(
     req: fuse_req_t,
     ino: fuse_ino_t,
     name: *const c_char,
@@ -546,31 +754,14 @@ unsafe extern "C" fn ops_removexattr<T: Operations>(
     })
 }
 
-unsafe extern "C" fn ops_access<T: Operations>(req: fuse_req_t, ino: fuse_ino_t, mask: c_int) {
+unsafe extern "C" fn on_access<T: Operations>(req: fuse_req_t, ino: fuse_ino_t, mask: c_int) {
     call_with_ops(req, |ops: &mut T, req| match ops.access(ino, mask) {
         Ok(()) => fuse_reply_err(req, 0),
         Err(errno) => fuse_reply_err(req, errno),
     })
 }
 
-unsafe extern "C" fn ops_open<T: Operations>(
-    req: fuse_req_t,
-    ino: fuse_ino_t,
-    fi: *mut fuse_file_info,
-) {
-    call_with_ops(req, |ops: &mut T, req| {
-        let fi = make_mut_unchecked(fi);
-        match ops.open(ino, &mut OpenOptions(fi)) {
-            Ok(fh) => {
-                fi.fh = fh;
-                fuse_reply_open(req, fi)
-            }
-            Err(errno) => fuse_reply_err(req, errno),
-        }
-    })
-}
-
-unsafe extern "C" fn ops_create<T: Operations>(
+unsafe extern "C" fn on_create<T: Operations>(
     req: fuse_req_t,
     parent: fuse_ino_t,
     name: *const c_char,
@@ -581,206 +772,23 @@ unsafe extern "C" fn ops_create<T: Operations>(
         let fi = make_mut_unchecked(fi);
         match ops.create(parent, CStr::from_ptr(name), mode, &mut OpenOptions(fi)) {
             Ok((Entry(entry), fh)) => {
-                fi.fh = fh;
-                fuse_reply_create(req, &entry, fi)
+                fuse_file_info_set_fh(fi, fh);
+                fuse_reply_create(req, entry.as_ref(), fi)
             }
             Err(errno) => fuse_reply_err(req, errno),
         }
     })
 }
 
-unsafe extern "C" fn ops_read<T: Operations>(
+// ==== helpers ====
+
+unsafe fn call_with_ops<T: Operations>(
     req: fuse_req_t,
-    ino: fuse_ino_t,
-    bufsize: usize,
-    off: off_t,
-    fi: *mut fuse_file_info,
+    f: impl FnOnce(&mut T, &mut fuse_req) -> c_int,
 ) {
-    call_with_ops(req, |ops: &mut T, req| {
-        let fi = make_mut_unchecked(fi);
-        let fh = fi.fh;
-        match ops.read(ino, off, bufsize, &mut ReadOptions(fi), fh) {
-            Ok(data) => reply_buf_limited(req, &data[..std::cmp::min(data.len(), bufsize)]),
-            Err(errno) => fuse_reply_err(req, errno),
-        }
-    })
-}
-
-unsafe extern "C" fn ops_write<T: Operations>(
-    req: fuse_req_t,
-    ino: fuse_ino_t,
-    buf: *const c_char,
-    size: usize,
-    off: off_t,
-    fi: *mut fuse_file_info,
-) {
-    call_with_ops(req, |ops: &mut T, req| {
-        let fi = make_mut_unchecked(fi);
-        let buf = std::slice::from_raw_parts(buf as *const u8, size);
-        let fh = fi.fh;
-        match ops.write(ino, &buf[..], off, &mut WriteOptions(fi), fh) {
-            Ok(count) => fuse_reply_write(req, count),
-            Err(errno) => fuse_reply_err(req, errno),
-        }
-    })
-}
-
-unsafe extern "C" fn ops_flush<T: Operations>(
-    req: fuse_req_t,
-    ino: fuse_ino_t,
-    fi: *mut fuse_file_info,
-) {
-    call_with_ops(req, |ops: &mut T, req| {
-        let fi = make_mut_unchecked(fi);
-        let fh = fi.fh;
-        match ops.flush(ino, &mut FlushOptions(fi), fh) {
-            Ok(()) => fuse_reply_err(req, 0),
-            Err(errno) => fuse_reply_err(req, errno),
-        }
-    })
-}
-
-unsafe extern "C" fn ops_getattr<T: Operations>(
-    req: fuse_req_t,
-    ino: fuse_ino_t,
-    fi: *mut fuse_file_info,
-) {
-    call_with_ops(req, |ops: &mut T, req| {
-        let fi = make_mut(fi);
-        match ops.getattr(ino, fi.map(|fi| fi.fh)) {
-            Ok((stat, timeout)) => fuse_reply_attr(req, &stat, timeout),
-            Err(errno) => fuse_reply_err(req, errno),
-        }
-    })
-}
-
-unsafe extern "C" fn ops_setattr<T: Operations>(
-    req: fuse_req_t,
-    ino: fuse_ino_t,
-    attr: *mut stat,
-    to_set: c_int,
-    fi: *mut fuse_file_info,
-) {
-    call_with_ops(req, |ops: &mut T, req| {
-        let fi = make_mut(fi);
-        let attr = make_mut_unchecked(attr);
-        match ops.setattr(
-            ino,
-            &SetAttrs {
-                attr: &*attr,
-                to_set,
-            },
-            fi.map(|fi| fi.fh),
-        ) {
-            Ok((stat, timeout)) => fuse_reply_attr(req, &stat, timeout),
-            Err(errno) => fuse_reply_err(req, errno),
-        }
-    })
-}
-
-unsafe extern "C" fn ops_fsync<T: Operations>(
-    req: fuse_req_t,
-    ino: fuse_ino_t,
-    datasync: c_int,
-    fi: *mut fuse_file_info,
-) {
-    call_with_ops(req, |ops: &mut T, req| {
-        let fi = make_mut_unchecked(fi);
-        match ops.fsync(ino, datasync, fi.fh) {
-            Ok(()) => fuse_reply_err(req, 0),
-            Err(errno) => fuse_reply_err(req, errno),
-        }
-    })
-}
-
-unsafe extern "C" fn ops_release<T: Operations>(
-    req: fuse_req_t,
-    ino: fuse_ino_t,
-    fi: *mut fuse_file_info,
-) {
-    call_with_ops(req, |ops: &mut T, req| {
-        let fi = make_mut_unchecked(fi);
-        let fh = fi.fh;
-        match ops.release(ino, &mut ReleaseOptions(fi), fh) {
-            Ok(()) => fuse_reply_err(req, 0),
-            Err(errno) => fuse_reply_err(req, errno),
-        }
-    })
-}
-
-unsafe extern "C" fn ops_opendir<T: Operations>(
-    req: fuse_req_t,
-    ino: fuse_ino_t,
-    fi: *mut fuse_file_info,
-) {
-    call_with_ops(req, |ops: &mut T, req| {
-        let fi = make_mut_unchecked(fi);
-        match ops.opendir(ino, &mut OpenDirOptions(fi)) {
-            Ok(fh) => {
-                // FIXME: avoid to use boxing.
-                fi.fh = fh;
-                fuse_reply_open(req, fi)
-            }
-            Err(errno) => fuse_reply_err(req, errno),
-        }
-    })
-}
-
-unsafe extern "C" fn ops_readdir<T: Operations>(
-    req: fuse_req_t,
-    ino: fuse_ino_t,
-    size: usize,
-    offset: off_t,
-    fi: *mut fuse_file_info,
-) {
-    call_with_ops(req, |ops: &mut T, req| {
-        let fi = make_mut_unchecked(fi);
-        let mut buf = Vec::with_capacity(size);
-        buf.set_len(size);
-
-        let mut dir_buf = DirBuf {
-            req: &mut *req,
-            buf: &mut buf[..],
-            pos: 0,
-        };
-
-        let res = ops.readdir(ino, offset, &mut dir_buf, fi.fh);
-        let DirBuf { pos, .. } = dir_buf;
-
-        match res {
-            Ok(()) => reply_buf_limited(req, &buf[..pos]),
-            Err(errno) => fuse_reply_err(req, errno),
-        }
-    })
-}
-
-unsafe extern "C" fn ops_fsyncdir<T: Operations>(
-    req: fuse_req_t,
-    ino: fuse_ino_t,
-    datasync: c_int,
-    fi: *mut fuse_file_info,
-) {
-    call_with_ops(req, |ops: &mut T, req| {
-        let fi = make_mut_unchecked(fi);
-        match ops.fsyncdir(ino, datasync, fi.fh) {
-            Ok(()) => fuse_reply_err(req, 0),
-            Err(errno) => fuse_reply_err(req, errno),
-        }
-    })
-}
-
-unsafe extern "C" fn ops_releasedir<T: Operations>(
-    req: fuse_req_t,
-    ino: fuse_ino_t,
-    fi: *mut fuse_file_info,
-) {
-    call_with_ops(req, |ops: &mut T, req| {
-        let fi = make_mut_unchecked(fi);
-        match ops.releasedir(ino, fi.fh) {
-            Ok(()) => fuse_reply_err(req, 0),
-            Err(errno) => fuse_reply_err(req, errno),
-        }
-    })
+    let req = make_mut_unchecked(req);
+    let ops = make_mut_unchecked(fuse_req_userdata(req) as *mut T);
+    f(ops, req);
 }
 
 unsafe fn reply_buf_limited(req: &mut fuse_req, buf: &[u8]) -> c_int {
@@ -796,6 +804,11 @@ fn make_mut<'a, T>(ptr: *mut T) -> Option<&'a mut T> {
     } else {
         None
     }
+}
+
+unsafe fn make_ref_unchecked<'a, T>(ptr: *const T) -> &'a T {
+    debug_assert!(!ptr.is_null());
+    &*ptr
 }
 
 unsafe fn make_mut_unchecked<'a, T>(ptr: *mut T) -> &'a mut T {

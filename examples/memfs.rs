@@ -152,7 +152,7 @@ impl Operations for MemFs {
 
         let mut e = Entry::default();
         e.nodeid(child.attr().st_ino);
-        e.attr(child.attr().clone());
+        e.attr(&child.attr().clone());
         e.attr_timeout(0.0);
         e.entry_timeout(0.0);
 
@@ -196,7 +196,7 @@ impl Operations for MemFs {
 
         let mut e = Entry::new();
         e.nodeid(inode.attr().st_ino);
-        e.attr(inode.attr().clone());
+        e.attr(&inode.attr().clone());
         e.attr_timeout(0.0);
         e.entry_timeout(0.0);
 
@@ -230,7 +230,7 @@ impl Operations for MemFs {
 
         let mut e = Entry::new();
         e.nodeid(inode.attr().st_ino);
-        e.attr(inode.attr().clone());
+        e.attr(&inode.attr().clone());
         e.attr_timeout(0.0);
         e.entry_timeout(0.0);
 

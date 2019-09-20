@@ -2,26 +2,102 @@
 
 #![allow(nonstandard_style)]
 
-#[cfg(feature = "bindgen")]
-mod bindgen {
-    use libc::{
-        dev_t, //
-        flock,
-        gid_t,
-        iovec,
-        mode_t,
-        off_t,
-        pid_t,
-        stat,
-        statvfs,
-        uid_t,
-    };
+pub mod helpers;
 
-    include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
+use libc::{c_char, c_double, c_int, c_void, off_t, size_t, stat, statvfs};
+
+#[repr(C)]
+pub struct fuse_conn_info {
+    _unused: [u8; 0],
 }
 
-#[cfg(feature = "bindgen")]
-pub use crate::bindgen::*;
+#[repr(C)]
+pub struct fuse_ctx {
+    _unused: [u8; 0],
+}
+
+#[repr(C)]
+pub struct fuse_entry_param {
+    _unused: [u8; 0],
+}
+
+#[repr(C)]
+pub struct fuse_file_info {
+    _unused: [u8; 0],
+}
+
+#[repr(C)]
+pub struct fuse_lowlevel_ops {
+    _unused: [u8; 0],
+}
+
+#[repr(C)]
+pub struct fuse_req {
+    _unused: [u8; 0],
+}
+
+#[repr(C)]
+pub struct fuse_session {
+    _unused: [u8; 0],
+}
+
+pub type fuse_ino_t = u64;
+pub type fuse_req_t = *mut fuse_req;
+
+extern "C" {
+    pub fn fuse_add_direntry(
+        req: fuse_req_t,
+        buf: *mut c_char,
+        bufsize: size_t,
+        name: *const c_char,
+        stbuf: *const stat,
+        off: off_t,
+    ) -> size_t;
+
+    pub fn fuse_remove_signal_handlers(se: *mut fuse_session);
+
+    pub fn fuse_reply_attr(req: fuse_req_t, attr: *const stat, attr_timeout: c_double) -> c_int;
+
+    pub fn fuse_reply_buf(req: fuse_req_t, buf: *const c_char, size: size_t) -> c_int;
+
+    pub fn fuse_reply_create(
+        req: fuse_req_t,
+        e: *const fuse_entry_param,
+        fi: *const fuse_file_info,
+    ) -> c_int;
+
+    pub fn fuse_reply_entry(req: fuse_req_t, e: *const fuse_entry_param) -> c_int;
+
+    pub fn fuse_reply_err(req: fuse_req_t, err: c_int) -> c_int;
+
+    pub fn fuse_reply_none(req: fuse_req_t);
+
+    pub fn fuse_reply_open(req: fuse_req_t, fi: *const fuse_file_info) -> c_int;
+
+    pub fn fuse_reply_readlink(req: fuse_req_t, link: *const c_char) -> c_int;
+
+    pub fn fuse_reply_statfs(req: fuse_req_t, stbuf: *const statvfs) -> c_int;
+
+    pub fn fuse_reply_write(req: fuse_req_t, count: size_t) -> c_int;
+
+    pub fn fuse_reply_xattr(req: fuse_req_t, count: size_t) -> c_int;
+
+    pub fn fuse_req_ctx(req: fuse_req_t) -> *const fuse_ctx;
+
+    pub fn fuse_req_userdata(req: fuse_req_t) -> *mut c_void;
+
+    pub fn fuse_session_destroy(se: *mut fuse_session);
+
+    pub fn fuse_session_fd(se: *mut fuse_session) -> c_int;
+
+    pub fn fuse_session_loop(se: *mut fuse_session) -> c_int;
+
+    pub fn fuse_session_mount(se: *mut fuse_session, mountpoint: *const c_char) -> c_int;
+
+    pub fn fuse_session_unmount(se: *mut fuse_session);
+
+    pub fn fuse_set_signal_handlers(se: *mut fuse_session) -> c_int;
+}
 
 /// Capability bits for `fuse_conn_info.capable` and `fuse_conn_info.want`.
 pub mod fuse_cap_flags {

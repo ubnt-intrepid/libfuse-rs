@@ -1,23 +1,20 @@
-use super::ops::{make_fuse_lowlevel_ops, Operations};
+use super::ops::{assign_ops, Operations};
 use libc::{c_char, c_int};
 use libfuse_sys::{
-    fuse_args, //
-    fuse_opt_free_args,
-    fuse_remove_signal_handlers,
+    fuse_remove_signal_handlers, //
     fuse_session,
     fuse_session_destroy,
     fuse_session_fd,
     fuse_session_loop,
     fuse_session_mount,
-    fuse_session_new,
     fuse_session_unmount,
     fuse_set_signal_handlers,
+    helpers::{fuse_ll_ops_new, fuse_session_new_wrapped},
 };
 use std::{
     ffi::CString,
     io,
     marker::PhantomData,
-    mem,
     os::unix::ffi::OsStrExt,
     os::unix::io::RawFd,
     path::{Path, PathBuf},
@@ -62,26 +59,21 @@ impl Builder {
         );
 
         let c_args: Vec<*const c_char> = args.iter().map(|arg| arg.as_ptr()).collect();
-        let mut fargs = fuse_args {
-            argc: c_args.len() as c_int,
-            argv: c_args.as_ptr() as *mut *mut c_char,
-            allocated: 0,
-        };
-
-        let fops = make_fuse_lowlevel_ops::<T>();
-
-        let se = unsafe {
-            fuse_session_new(
-                &mut fargs, //
-                &fops,
-                mem::size_of_val(&fops),
-                Box::into_raw(Box::new(ops)) as *mut _,
-            )
-        };
+        let se;
         unsafe {
-            fuse_opt_free_args(&mut fargs);
-        }
-
+            let fops = fuse_ll_ops_new();
+            if fops.is_null() {
+                return Err(io::Error::from_raw_os_error(libc::ENOMEM));
+            }
+            assign_ops(&mut *fops, &ops);
+            se = fuse_session_new_wrapped(
+                c_args.len() as c_int,
+                c_args.as_ptr(),
+                fops,
+                Box::into_raw(Box::new(ops)) as *mut _,
+            );
+            libc::free(fops as *mut _);
+        };
         if se.is_null() {
             return Err(io::ErrorKind::Other.into());
         }
