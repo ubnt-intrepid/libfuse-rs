@@ -1,5 +1,5 @@
 #include <fuse_lowlevel.h>
-#include <malloc.h>
+#include <stdlib.h>
 #include <sys/stat.h>
 
 struct fuse_session*
