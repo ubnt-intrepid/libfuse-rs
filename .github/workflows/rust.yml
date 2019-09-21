@@ -32,7 +32,7 @@ jobs:
         cargo doc --all --verbose
         echo '<meta http-equiv="refresh" content="0;url=libfuse">' > ./target/doc/index.html
     - name: Deply API doc
-      if: github.event_name == 'push' && github.ref == 'master'
+      if: github.event_name == 'push' && github.ref == 'refs/heads/master'
       uses: peaceiris/actions-gh-pages@v2.3.1
       env:
         ACTIONS_DEPLOY_KEY: ${{ secrets.ACTIONS_DEPLOY_KEY }}
