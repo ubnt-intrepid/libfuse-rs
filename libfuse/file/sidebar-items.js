@@ -1,0 +1,1 @@
+initSidebarItems({"enum":[["XAttrReply",""]],"struct":[["Entry",""],["FlushOptions",""],["OpenOptions",""],["ReadOptions",""],["ReleaseOptions",""],["RenameFlags","Additional option flags provided to `rename`."],["SetAttrs","A set of attributes to be set."],["WriteOptions",""],["XAttrFlags","Additional option flags provided to `setxattr`."]]});

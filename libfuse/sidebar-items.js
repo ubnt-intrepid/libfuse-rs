@@ -1,0 +1,1 @@
+initSidebarItems({"constant":[["ROOT_NODEID",""]],"mod":[["dir",""],["file",""],["session",""]],"struct":[["CapabilityFlags","Capability flags."],["ConnectionInfo","Connection information passed to `Operations::init` method."]],"trait":[["Operations",""]],"type":[["NodeId","The type of inode number used in the filesystem."],["OperationResult",""]]});

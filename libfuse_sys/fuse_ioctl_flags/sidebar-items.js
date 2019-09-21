@@ -1,0 +1,1 @@
+initSidebarItems({"constant":[["FUSE_IOCTL_COMPAT",""],["FUSE_IOCTL_DIR",""],["FUSE_IOCTL_MAX_IOV","Maximum of in_iovecs + out_iovecs."],["FUSE_IOCTL_RETRY",""],["FUSE_IOCTL_UNRESTRICTED",""]],"type":[["Type",""]]});
