@@ -2,16 +2,10 @@ use crate::common::NodeId;
 use bitflags::bitflags;
 use libc::{c_int, gid_t, mode_t, stat, timespec, uid_t};
 use libfuse_sys::{
-    fuse_entry_param, fuse_file_info,
+    fuse_file_info, //
     fuse_setattr_flags::*,
     helpers::{
-        fuse_entry_param_attr, //
-        fuse_entry_param_attr_timeout,
-        fuse_entry_param_entry_timeout,
-        fuse_entry_param_generation,
-        fuse_entry_param_ino,
-        fuse_entry_param_new,
-        fuse_file_info_flags,
+        fuse_file_info_flags, //
         fuse_file_info_flock_release,
         fuse_file_info_flush,
         fuse_file_info_lock_owner,
@@ -21,67 +15,25 @@ use libfuse_sys::{
         fuse_file_info_writepage,
     },
 };
-use std::{borrow::Cow, ptr::NonNull};
+use std::{borrow::Cow, mem};
 
-pub struct Entry(pub(crate) NonNull<fuse_entry_param>);
+pub struct Entry {
+    pub nodeid: NodeId,
+    pub generation: u64,
+    pub attr: stat,
+    pub attr_timeout: f64,
+    pub entry_timeout: f64,
+}
 
 impl Default for Entry {
     fn default() -> Self {
-        Self(NonNull::new(unsafe { fuse_entry_param_new() }).unwrap())
-    }
-}
-
-impl Drop for Entry {
-    fn drop(&mut self) {
-        unsafe {
-            libc::free(self.0.as_ptr() as *mut _);
+        Self {
+            nodeid: 0,
+            generation: 0,
+            attr: unsafe { mem::zeroed() },
+            attr_timeout: 0.0,
+            entry_timeout: 0.0,
         }
-    }
-}
-
-impl Entry {
-    /// Create a new `Entry`.
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Sets the inode number for this entry.
-    pub fn nodeid(&mut self, id: NodeId) -> &mut Self {
-        unsafe {
-            fuse_entry_param_ino(self.0.as_mut(), id);
-        }
-        self
-    }
-
-    /// Sets the generation number for this entry.
-    pub fn generation(&mut self, gen: u64) -> &mut Self {
-        unsafe {
-            fuse_entry_param_generation(self.0.as_mut(), gen);
-        }
-        self
-    }
-
-    /// Sets the attributes associated with this entry.
-    pub fn attr(&mut self, attr: &stat) -> &mut Self {
-        unsafe {
-            fuse_entry_param_attr(self.0.as_mut(), attr);
-        }
-        self
-    }
-
-    ///
-    pub fn attr_timeout(&mut self, timeout: f64) -> &mut Self {
-        unsafe {
-            fuse_entry_param_attr_timeout(self.0.as_mut(), timeout);
-        }
-        self
-    }
-
-    pub fn entry_timeout(&mut self, timeout: f64) -> &mut Self {
-        unsafe {
-            fuse_entry_param_entry_timeout(self.0.as_mut(), timeout);
-        }
-        self
     }
 }
 

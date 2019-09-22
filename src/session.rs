@@ -1,4 +1,4 @@
-use super::ops::{assign_ops, Operations};
+use super::ops::{assign_ops, Context, Operations};
 use libc::{c_char, c_int};
 use libfuse_sys::{
     fuse_remove_signal_handlers, //
@@ -70,7 +70,7 @@ impl Builder {
                 c_args.len() as c_int,
                 c_args.as_ptr(),
                 fops,
-                Box::into_raw(Box::new(ops)) as *mut _,
+                Box::into_raw(Box::new(Context::new(ops))) as *mut _,
             );
             libc::free(fops as *mut _);
         };

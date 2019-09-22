@@ -150,13 +150,11 @@ impl Operations for MemFs {
         let child = parent.children.get(name).ok_or_else(|| libc::ENOENT)?;
         let child = self.inodes.get(child).ok_or_else(|| libc::ENOENT)?;
 
-        let mut e = Entry::default();
-        e.nodeid(child.attr().st_ino);
-        e.attr(&child.attr().clone());
-        e.attr_timeout(0.0);
-        e.entry_timeout(0.0);
-
-        Ok(e)
+        Ok(Entry {
+            nodeid: child.attr().st_ino,
+            attr: *child.attr(),
+            ..Default::default()
+        })
     }
 
     fn mknod(
@@ -194,13 +192,11 @@ impl Operations for MemFs {
         )?;
         let inode = self.inodes.get(&ino).unwrap();
 
-        let mut e = Entry::new();
-        e.nodeid(inode.attr().st_ino);
-        e.attr(&inode.attr().clone());
-        e.attr_timeout(0.0);
-        e.entry_timeout(0.0);
-
-        Ok(e)
+        Ok(Entry {
+            nodeid: inode.attr().st_ino,
+            attr: *inode.attr(),
+            ..Entry::default()
+        })
     }
 
     fn mkdir(&mut self, parent: NodeId, name: &CStr, mode: mode_t) -> OperationResult<Entry> {
@@ -228,13 +224,11 @@ impl Operations for MemFs {
         )?;
         let inode = self.inodes.get(&ino).unwrap();
 
-        let mut e = Entry::new();
-        e.nodeid(inode.attr().st_ino);
-        e.attr(&inode.attr().clone());
-        e.attr_timeout(0.0);
-        e.entry_timeout(0.0);
-
-        Ok(e)
+        Ok(Entry {
+            nodeid: inode.attr().st_ino,
+            attr: *inode.attr(),
+            ..Entry::default()
+        })
     }
 
     fn unlink(&mut self, parent: NodeId, name: &CStr) -> OperationResult<()> {

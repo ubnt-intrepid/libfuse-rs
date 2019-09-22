@@ -46,12 +46,13 @@ impl Operations for Hello {
             _ => return Err(libc::ENOENT),
         }
 
-        let mut e = Entry::default();
-        e.nodeid(HELLO_NODEID);
-        e.attr(&hello_stat(HELLO_NODEID)?);
-        e.attr_timeout(1.0);
-        e.entry_timeout(1.0);
-        Ok(e)
+        Ok(Entry {
+            nodeid: HELLO_NODEID,
+            attr: hello_stat(HELLO_NODEID)?,
+            attr_timeout: 1.0,
+            entry_timeout: 1.0,
+            ..Entry::default()
+        })
     }
 
     fn getattr(&mut self, id: NodeId, _: Option<u64>) -> OperationResult<(stat, f64)> {
