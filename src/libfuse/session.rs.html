@@ -186,7 +186,7 @@
 <span id="186">186</span>
 <span id="187">187</span>
 </pre><div class="example-wrap"><pre class="rust ">
-<span class="kw">use</span> <span class="kw">super</span>::<span class="ident">ops</span>::{<span class="ident">assign_ops</span>, <span class="ident">Operations</span>};
+<span class="kw">use</span> <span class="kw">super</span>::<span class="ident">ops</span>::{<span class="ident">assign_ops</span>, <span class="ident">Context</span>, <span class="ident">Operations</span>};
 <span class="kw">use</span> <span class="ident">libc</span>::{<span class="ident">c_char</span>, <span class="ident">c_int</span>};
 <span class="kw">use</span> <span class="ident">libfuse_sys</span>::{
     <span class="ident">fuse_remove_signal_handlers</span>, <span class="comment">//</span>
@@ -258,7 +258,7 @@
                 <span class="ident">c_args</span>.<span class="ident">len</span>() <span class="kw">as</span> <span class="ident">c_int</span>,
                 <span class="ident">c_args</span>.<span class="ident">as_ptr</span>(),
                 <span class="ident">fops</span>,
-                <span class="ident">Box</span>::<span class="ident">into_raw</span>(<span class="ident">Box</span>::<span class="ident">new</span>(<span class="ident">ops</span>)) <span class="kw">as</span> <span class="kw-2">*</span><span class="kw-2">mut</span> <span class="kw">_</span>,
+                <span class="ident">Box</span>::<span class="ident">into_raw</span>(<span class="ident">Box</span>::<span class="ident">new</span>(<span class="ident">Context</span>::<span class="ident">new</span>(<span class="ident">ops</span>))) <span class="kw">as</span> <span class="kw-2">*</span><span class="kw-2">mut</span> <span class="kw">_</span>,
             );
             <span class="ident">libc</span>::<span class="ident">free</span>(<span class="ident">fops</span> <span class="kw">as</span> <span class="kw-2">*</span><span class="kw-2">mut</span> <span class="kw">_</span>);
         };
