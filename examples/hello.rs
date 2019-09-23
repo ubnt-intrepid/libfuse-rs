@@ -116,11 +116,11 @@ fn hello_stat(ino: NodeId) -> Result<stat, c_int> {
     stbuf.st_ino = ino;
     match ino {
         1 => {
-            stbuf.st_mode = libc::S_IFDIR | 0755;
+            stbuf.st_mode = libc::S_IFDIR | 0o755;
             stbuf.st_nlink = 2;
         }
         2 => {
-            stbuf.st_mode = libc::S_IFREG | 0444;
+            stbuf.st_mode = libc::S_IFREG | 0o444;
             stbuf.st_nlink = 1;
             stbuf.st_size = HELLO_STR.len() as i64;
         }

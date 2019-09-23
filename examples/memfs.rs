@@ -40,7 +40,7 @@ fn main() -> io::Result<()> {
                     attr.st_size = data_size as i64;
                     attr.st_ctime = now.timestamp();
                     attr.st_mtime = now.timestamp();
-                    attr.st_mode = libc::S_IFREG | 0666;
+                    attr.st_mode = libc::S_IFREG | 0o666;
                     attr.st_uid = unsafe { libc::getuid() };
                     attr.st_gid = unsafe { libc::getgid() };
                     attr
@@ -81,7 +81,7 @@ impl MemFs {
                     attr.st_ctime = now.timestamp();
                     attr.st_mtime = now.timestamp();
                     attr.st_atime = now.timestamp();
-                    attr.st_mode = libc::S_IFDIR | 0777;
+                    attr.st_mode = libc::S_IFDIR | 0o777;
                     attr.st_uid = unsafe { libc::getuid() };
                     attr.st_gid = unsafe { libc::getgid() };
                     attr
